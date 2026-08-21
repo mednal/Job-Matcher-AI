@@ -37,8 +37,8 @@ As of the last update to this file:
 | ---- | ----- |
 | Product / architecture / database design | Written (`PRODUCT.md`, `ARCHITECTURE.md`, `DATABASE.md`) |
 | Angular workspace | Scaffolded only — default welcome page, no routes, no app code |
-| NestJS backend | Foundation only — config, validation pipe, CORS, `/api/v1/health` |
-| PostgreSQL / Prisma | Postgres 18 runs in Docker on host port 5433 and is verified reachable; `DATABASE_URL` is set in `backend/.env`, `.env.example`, and validated by the Joi schema. Prisma is wired: `prisma/schema.prisma` (datasource + generator, no models yet), `PrismaService`/`PrismaModule` connect NestJS to Postgres, and `/api/v1/health` reports live database reachability. No tables exist yet — those start at M2.2. |
+| NestJS backend | Config, validation pipe, CORS, `/api/v1/health` (now `@Public()`), plus a working `AuthModule` and `UsersModule`: register, login, argon2id hashing, JWT access tokens, refresh-token rotation/revocation, logout, a global `JwtAuthGuard`, and `GET /users/me`. `RolesGuard` (M3.5) and `/profiles/me` (rest of M3.6) are not built. |
+| PostgreSQL / Prisma | Postgres 18 runs in Docker on host port 5433. `prisma/schema.prisma` now holds `User`, `Profile`, `RefreshToken`, `UserRole`, `WorkplaceType` (M2.2's slice, migration `20260821171157_add_user_auth_tables`). No other tables exist yet — those start at M2.3. |
 | Everything else | Not started |
 
 Two working-tree notes: `docs/DATABASE.md` is untracked and `docs/ARCHITECTURE.md`
@@ -160,10 +160,17 @@ Goal: the schema of `DATABASE.md` exists in PostgreSQL, reachable through Prisma
   is M2.2, not this milestone.
 
 ### M2.2 — User and auth tables
-- [ ] `User`, `Profile`, `RefreshToken`, `UserRole` enum (`DATABASE.md` §3.1)
-- [ ] Email stored lowercased/trimmed with a unique constraint
-- [ ] First migration committed
+- [x] `User`, `Profile`, `RefreshToken`, `UserRole` enum (`DATABASE.md` §3.1)
+- [x] Email stored lowercased/trimmed with a unique constraint
+- [x] First migration committed
 - Verify: `prisma migrate dev` applies cleanly; `prisma studio` shows the tables.
+- Verified 2026-08-21: `prisma/schema.prisma` gained `User`, `Profile`,
+  `RefreshToken`, and `UserRole` (plus `WorkplaceType`, needed by
+  `Profile.workplaceTypes`). Migration `20260821171157_add_user_auth_tables`
+  applied cleanly against Docker Postgres. `User.email` is `@unique`; the DTO
+  layer trims/lowercases before it reaches Prisma. `User.savedJobs` from
+  `DATABASE.md` §3.1 is intentionally deferred — `SavedJob`/`Job` don't exist
+  until M2.4/M2.5.
 
 ### M2.3 — Source and ingestion tables
 - [ ] `JobSource`, `IngestionRun`, `RawJobDocument` (§3.2)
@@ -204,28 +211,51 @@ Goal: the schema of `DATABASE.md` exists in PostgreSQL, reachable through Prisma
 Goal: a user can register, log in, hold a session, and own a search profile.
 
 ### M3.1 — Password hashing
-- [ ] `argon2id` hashing service (bcrypt fallback if native builds fight Windows)
-- [ ] Unit tests: hash never equals plaintext, verify true/false, distinct salts
+- [x] `argon2id` hashing service (bcrypt fallback if native builds fight Windows)
+- [x] Unit tests: hash never equals plaintext, verify true/false, distinct salts
 - Verify: `npm test` covers the hashing service.
+- Verified 2026-08-21: `PasswordHasherService` (`modules/auth/`) wraps `argon2`
+  (argon2id, native build works cleanly on this Windows machine — bcrypt fallback
+  not needed). `password-hasher.service.spec.ts`: hash ≠ plaintext, verify
+  true/false, distinct salts per hash, malformed hash returns `false` instead of
+  throwing.
 
 ### M3.2 — Register and login
-- [ ] `POST /auth/register` — DTO validation, duplicate email returns 409
-- [ ] `POST /auth/login` — returns access + refresh token
-- [ ] Identical failure response for unknown email and wrong password
+- [x] `POST /auth/register` — DTO validation, duplicate email returns 409
+- [x] `POST /auth/login` — returns access + refresh token
+- [x] Identical failure response for unknown email and wrong password
 - Verify: e2e register → login issues tokens; a duplicate register returns 409.
+- Verified 2026-08-21: `AuthController`/`AuthService` (`modules/auth/`). Duplicate
+  email (including case-only differences) maps Prisma `P2002` → 409. Login runs a
+  password-hash verification against a fixed dummy hash even when the email is
+  unknown, so unknown-email and wrong-password return byte-identical 401 bodies.
+  `test/auth.e2e-spec.ts` covers both.
 
 ### M3.3 — JWT access tokens
-- [ ] `JwtAuthGuard` registered globally with a `@Public()` opt-out decorator
-- [ ] ~15 minute access token carrying `sub` and `email`
-- [ ] `JWT_SECRET`, `JWT_ACCESS_TTL`, `JWT_REFRESH_TTL` in config, Joi, `.env.example`
+- [x] `JwtAuthGuard` registered globally with a `@Public()` opt-out decorator
+- [x] ~15 minute access token carrying `sub` and `email`
+- [x] `JWT_SECRET`, `JWT_ACCESS_TTL`, `JWT_REFRESH_TTL` in config, Joi, `.env.example`
 - Verify: e2e — a protected route 401s without a token and 200s with one.
+- Verified 2026-08-21: `JwtAuthGuard` (`modules/auth/guards/`) is registered as a
+  global `APP_GUARD`; `@Public()` (`common/decorators/`) opts out — applied to the
+  three unauthenticated auth routes and to the pre-existing `HealthController`,
+  which had no guard before this guard went global. `JWT_SECRET` is required with
+  a minimum length of 32 and no default, so the app refuses to boot on a weak
+  secret. `GET /users/me` (M3.6) is the protected route exercised by the e2e
+  401-without / 200-with-token case.
 
 ### M3.4 — Refresh token rotation
-- [ ] Opaque refresh token; only its hash stored in `RefreshToken`
-- [ ] `POST /auth/refresh` rotates and invalidates the previous token
-- [ ] `POST /auth/logout` revokes
-- [ ] Reuse of an already-rotated token is rejected
+- [x] Opaque refresh token; only its hash stored in `RefreshToken`
+- [x] `POST /auth/refresh` rotates and invalidates the previous token
+- [x] `POST /auth/logout` revokes
+- [x] Reuse of an already-rotated token is rejected
 - Verify: e2e — refreshing twice with the same token fails on the second attempt.
+- Verified 2026-08-21: `RefreshTokenService` (`modules/auth/`) issues a 32-byte
+  random token, stores only its sha256, and rotates old→new inside one
+  `prisma.$transaction`. Reuse of a revoked token also revokes every other live
+  token for that user (containment on suspected theft). `refresh-token.service.spec.ts`
+  (unit) and `test/auth.e2e-spec.ts` (e2e, including the required "refresh twice
+  with the same token" case) both pass.
 
 ### M3.5 — Role guard
 - [ ] `RolesGuard` reading `User.role`, guarding admin-only routes
@@ -233,11 +263,15 @@ Goal: a user can register, log in, hold a session, and own a search profile.
 - Verify: a `USER` token receives 403 on an `ADMIN` route.
 
 ### M3.6 — Users and profile
-- [ ] `GET /users/me`
+- [x] `GET /users/me`
 - [ ] `GET /profiles/me` and `PUT /profiles/me` (titles, locations, technologies,
       workplace types, max years)
 - [ ] A user can only read or write their own profile
 - Verify: e2e — user A cannot reach user B's profile.
+- Note 2026-08-21: only `GET /users/me` is implemented (`modules/users/`),
+  returning a hand-written `UserResponse` DTO that structurally excludes
+  `passwordHash`. `/profiles/me` was not requested and needs the `Profile` table's
+  write path designed — this milestone stays open until that lands.
 
 ---
 

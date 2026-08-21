@@ -1,9 +1,18 @@
 // JuniorJob AI — Prisma schema.
 //
-// Milestone M2.1 wires Prisma into the backend: datasource, generator, and the
+// Milestone M2.1 wired Prisma into the backend: datasource, generator, and the
 // tooling to migrate and generate a client. The data model itself (docs/DATABASE.md)
-// is added table-by-table in later milestones (M2.2–M2.6), per CLAUDE.md's rule to
-// build only what a task asks for.
+// is added table-by-table in later milestones, per CLAUDE.md's rule to build only
+// what a task asks for.
+//
+// This file currently holds the M2.2 slice (docs/DATABASE.md §3.1): User, Profile,
+// RefreshToken, and UserRole — the tables the M3 authentication module needs.
+// `Profile.workplaceTypes` uses WorkplaceType, defined here since it is otherwise
+// unused until profiles (M3.6) and job postings (M2.4) exist.
+//
+// `User.savedJobs` (docs/DATABASE.md §3.1) is intentionally omitted until the
+// `SavedJob`/`Job` models exist (M2.4/M2.5) — Prisma cannot reference a model that
+// isn't declared yet.
 
 generator client {
   provider = "prisma-client-js"
@@ -12,4 +21,56 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum WorkplaceType {
+  REMOTE
+  ONSITE
+  HYBRID
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique // stored lowercased + trimmed
+  passwordHash String
+  role         UserRole @default(USER)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  profile       Profile?
+  refreshTokens RefreshToken[]
+}
+
+model Profile {
+  id                String          @id @default(uuid())
+  userId            String          @unique
+  displayName       String?
+  yearsOfExperience Int             @default(0) // 0–2 for the target user
+  desiredRoles      String[] // e.g. ["Java Developer"]
+  technologies      String[] // canonical slugs — docs/DATABASE.md §6
+  locations         String[] // free text
+  countryCodes      String[] // ISO-3166 alpha-2
+  workplaceTypes    WorkplaceType[]
+  updatedAt         DateTime        @updatedAt @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique // sha256 of the opaque token
+  expiresAt DateTime  @db.Timestamptz(3)
+  revokedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
 }
