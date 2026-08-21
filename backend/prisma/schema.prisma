@@ -1,0 +1,15 @@
+// JuniorJob AI — Prisma schema.
+//
+// Milestone M2.1 wires Prisma into the backend: datasource, generator, and the
+// tooling to migrate and generate a client. The data model itself (docs/DATABASE.md)
+// is added table-by-table in later milestones (M2.2–M2.6), per CLAUDE.md's rule to
+// build only what a task asks for.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

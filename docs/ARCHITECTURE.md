@@ -30,6 +30,12 @@ Three consequences:
 
 Features under "Future SaaS Evolution" (§13) must not be built during the MVP.
 
+**The data model has moved.** `docs/DATABASE.md` is the authoritative description of
+the database — every model, constraint, index, and the raw SQL Prisma cannot
+express. Its design decisions are approved, not proposed. §5 of this document keeps
+the structural rules (the three-level job model, retention, search strategy) and
+points there for the schema itself.
+
 ---
 
 ## 1. Architectural Goals
@@ -86,7 +92,8 @@ juniorjob-ai/
 ├── CLAUDE.md
 ├── docs/
 │   ├── PRODUCT.md
-│   └── ARCHITECTURE.md
+│   ├── ARCHITECTURE.md
+│   └── DATABASE.md           # authoritative data model
 ├── frontend/                 # Angular 22 SPA (already scaffolded)
 └── backend/                  # NestJS application (to be created)
 ```
@@ -193,189 +200,45 @@ historical data after a logic change without re-fetching from sources — import
 both for iteration speed and for respecting source rate limits. Its cost is
 storage; the trade-off is accepted, with a retention policy (§5.5).
 
-### 5.2 Schema sketch
+### 5.2 Schema
 
-```prisma
-// ---------- Users ----------
+The full schema — every model, field, constraint, index, and the raw SQL that
+Prisma cannot express — lives in **`docs/DATABASE.md`**, which is the authoritative
+description of the data model. It supersedes the schema sketch that previously
+appeared in this section.
 
-model User {
-  id            String   @id @default(uuid())
-  email         String   @unique
-  passwordHash  String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+What that document settles, and this section no longer restates:
 
-  profile       Profile?
-  savedJobs     SavedJob[]
-  refreshTokens RefreshToken[]
-}
+| Area | See |
+| ---- | --- |
+| Full Prisma schema and enums | `DATABASE.md` §3 |
+| Salary fields (stored, not filtered) | `DATABASE.md` §3.4 |
+| Classification evidence and score naming | `DATABASE.md` §4 |
+| Generated `tsvector`, partial indexes, CHECK constraints | `DATABASE.md` §5 |
+| Canonical slugs for company, title, technologies | `DATABASE.md` §6 |
+| Index inventory, with the query each one serves | `DATABASE.md` §7 |
+| Retention and cascade behaviour | `DATABASE.md` §8 |
 
-model Profile {
-  id                String          @id @default(uuid())
-  userId            String          @unique
-  displayName       String?
-  yearsOfExperience Int             @default(0)   // 0–2 for the target user
-  desiredRoles      String[]                      // e.g. ["Java Developer"]
-  technologies      String[]                      // e.g. ["Java","Spring Boot"]
-  locations         String[]
-  workplaceTypes    WorkplaceType[]
-  updatedAt         DateTime        @updatedAt
+The structural commitments that constrain the rest of this document:
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
+- **`Job.dedupHash` is `UNIQUE`.** The database, not the application, guarantees
+  one canonical job per vacancy. Ingestion treats the constraint violation as a
+  race to retry (§6.3).
+- **`Job.mergedIntoJobId`** redirects a job merged into another, so correcting a
+  false split never orphans a `SavedJob`. Search filters `mergedIntoJobId IS NULL`.
+- **`Job` and `JobPosting` carry a non-null `language`** (ISO 639-1, default `en`).
+  English and German are supported from day one; this drives both full-text search
+  (§5.4) and the rule-based classifier (§6.4).
+- **`User.role`** is `USER` or `ADMIN`, and guards the manual ingestion trigger
+  (§6). No administrative UI is part of the MVP.
+- **The current classification is denormalized onto `Job`** — `juniorLevel`,
+  `juniorScore`, `requiredMinYears`, `requiredMaxYears` — so search filters and
+  sorts without a join (§8.1).
+- **`RawJobDocument` is keyed by content hash**, so an unchanged re-fetch writes no
+  row. This is what keeps the 90-day retention policy affordable (§5.5).
 
-model RefreshToken {
-  id        String    @id @default(uuid())
-  userId    String
-  tokenHash String    @unique
-  expiresAt DateTime
-  revokedAt DateTime?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
-// ---------- Sources & ingestion ----------
-
-model JobSource {
-  id          String   @id @default(uuid())
-  key         String   @unique        // "example-source"
-  displayName String
-  enabled     Boolean  @default(true)
-  createdAt   DateTime @default(now())
-
-  postings      JobPosting[]
-  ingestionRuns IngestionRun[]
-}
-
-model IngestionRun {
-  id           String          @id @default(uuid())
-  sourceId     String
-  status       IngestionStatus
-  startedAt    DateTime        @default(now())
-  finishedAt   DateTime?
-  fetched      Int             @default(0)
-  created      Int             @default(0)
-  updated      Int             @default(0)
-  duplicates   Int             @default(0)
-  errorMessage String?
-
-  source JobSource @relation(fields: [sourceId], references: [id])
-
-  @@index([sourceId, startedAt])
-}
-
-model RawJobDocument {
-  id         String   @id @default(uuid())
-  sourceKey  String
-  externalId String
-  payload    Json
-  fetchedAt  DateTime @default(now())
-
-  @@index([sourceKey, externalId])
-}
-
-// ---------- Jobs ----------
-
-model JobPosting {
-  id             String          @id @default(uuid())
-  sourceId       String
-  externalId     String                         // id within that source
-  url            String
-  title          String
-  companyName    String
-  location       String?
-  countryCode    String?
-  workplaceType  WorkplaceType?
-  employmentType EmploymentType?
-  description    String          @db.Text       // normalized plain text
-  postedAt       DateTime?
-  fetchedAt      DateTime        @default(now())
-  jobId          String?                        // canonical cluster, null until dedup
-
-  source JobSource @relation(fields: [sourceId], references: [id])
-  job    Job?      @relation(fields: [jobId], references: [id])
-
-  @@unique([sourceId, externalId])              // idempotent re-ingestion
-  @@index([jobId])
-}
-
-model Job {
-  id             String          @id @default(uuid())
-  title          String
-  companyName    String
-  companySlug    String                         // normalized, used for dedup + filtering
-  location       String?
-  countryCode    String?
-  workplaceType  WorkplaceType?
-  employmentType EmploymentType?
-  description    String          @db.Text
-  technologies   String[]
-  postedAt       DateTime?
-  firstSeenAt    DateTime        @default(now())
-  lastSeenAt     DateTime        @updatedAt
-  dedupHash      String                         // exact-match clustering key
-
-  // denormalized from the current classification, for cheap filter + sort
-  juniorLevel    JuniorLevel?
-  juniorScore    Int?                           // 0–100
-
-  postings        JobPosting[]
-  classifications JobClassification[]
-  savedBy         SavedJob[]
-
-  @@index([dedupHash])
-  @@index([juniorLevel, postedAt])
-  @@index([countryCode, workplaceType])
-}
-
-model JobClassification {
-  id                String      @id @default(uuid())
-  jobId             String
-  classifierVersion String                      // e.g. "rules-1.0" / "llm-1.0"
-  level             JuniorLevel
-  score             Int                         // 0–100 suitability
-  minYears          Int?                        // extracted requirement
-  maxYears          Int?
-  positiveSignals   Json                        // Signal[]
-  negativeSignals   Json                        // Signal[]
-  summary           String?                     // short human explanation
-  isCurrent         Boolean     @default(true)
-  createdAt         DateTime    @default(now())
-
-  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@unique([jobId, classifierVersion])
-  @@index([jobId, isCurrent])
-}
-
-model SavedJob {
-  id        String   @id @default(uuid())
-  userId    String
-  jobId     String
-  note      String?
-  createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, jobId])
-  @@index([userId, createdAt])
-}
-
-enum JuniorLevel {
-  ENTRY_LEVEL
-  LIKELY_ENTRY_LEVEL
-  AMBIGUOUS
-  EXPERIENCED
-  CLEARLY_EXPERIENCED
-}
-
-enum WorkplaceType   { REMOTE ONSITE HYBRID }
-enum EmploymentType  { FULL_TIME PART_TIME INTERNSHIP CONTRACT WORKING_STUDENT }
-enum IngestionStatus { RUNNING SUCCESS FAILED }
-```
+Technologies are PostgreSQL `String[]` with a GIN index in the MVP; there is no
+`Technology` table. Primary keys are UUIDs throughout.
 
 ### 5.3 Signal shape
 
@@ -394,16 +257,30 @@ possible, and what lets a bad classification be debugged after the fact. JSON is
 used rather than a table because signals are only ever read as a whole alongside
 their classification — they are never queried independently.
 
+This shape is deliberately minimal and is **not** specified further at this stage.
+It is validated in code at the classifier boundary, not by a database constraint,
+and because it is JSON it can gain fields without a migration — so additional
+structure is added when a classifier actually needs it, not in advance. The
+verbatim `evidence` is the one part that is not negotiable (`DATABASE.md` §4.1).
+
 ### 5.4 Full-text search
 
 Search is PostgreSQL-native. No Elasticsearch in the MVP.
 
 - A generated `tsvector` column on `Job` over `title` (weight A), `companyName`
   (weight B) and `description` (weight C), with a GIN index.
+- The vector is **language-aware**: `Job.language` selects the `german` or
+  `english` text-search configuration, so German postings stem correctly. English
+  is the fallback for any other detected language.
 - The `pg_trgm` extension for fuzzy company/title similarity during deduplication.
 - Both are added through a Prisma migration containing raw SQL, since Prisma does
   not model generated tsvector columns; the column is declared `Unsupported` in the
   schema and queried with `$queryRaw` from a single repository method.
+
+Queries must select the same configuration as the write side — searching a German
+posting with the English configuration silently drops results through stemming
+mismatches rather than failing loudly. Both sides derive it from `Job.language`.
+The exact SQL is in `DATABASE.md` §5.
 
 This is the one place raw SQL is acceptable, and it stays confined to
 `search/search.repository.ts`.
@@ -414,6 +291,12 @@ This is the one place raw SQL is acceptable, and it stays confined to
 - `Job` / `JobPosting`: a posting no longer seen in consecutive successful runs of
   its source ages out via `lastSeenAt` and is excluded from search results after
   45 days. Rows are not deleted, so saved jobs never dangle.
+- `Job` rows merged into another are retained with `mergedIntoJobId` set and
+  excluded from search, so a `SavedJob` pointing at one still resolves.
+- `RefreshToken`: deleted once expired for more than 30 days.
+
+Only `RawJobDocument` and `RefreshToken` are hard-deleted; everything a user can
+reach is soft-deactivated. Full rules and cascade behaviour: `DATABASE.md` §8.
 
 ---
 
@@ -431,8 +314,10 @@ This is the one place raw SQL is acceptable, and it stays confined to
 others. Each stage is a service taking a typed input and returning a typed output,
 which makes every stage unit-testable with fixtures and no database.
 
-Scheduling uses `@nestjs/schedule` inside the API process, plus a guarded
-admin-only HTTP trigger for manual runs during development.
+Scheduling uses `@nestjs/schedule` inside the API process, plus an HTTP trigger for
+manual runs during development, guarded by a role check against `User.role ==
+ADMIN` (§9). The role guards that one route; no administrative UI is part of the
+MVP.
 
 ### 6.1 Source adapters
 
@@ -481,6 +366,12 @@ shape. Responsibilities:
 - Employment type detection, including internship and working-student, which matter
   for this audience
 - Technology extraction against a curated skill dictionary → `technologies[]`
+- Language detection → ISO 639-1 `language`, which selects the text-search
+  configuration (§5.4) and the classifier's pattern set (§6.4)
+- Salary extraction → `salaryMin`, `salaryMax`, `salaryCurrency`, `salaryPeriod`,
+  plus the verbatim `salaryText` the values were parsed from. Partial extraction is
+  normal and acceptable; salary is stored and displayed but **not filtered on** in
+  the MVP (`DATABASE.md` §3.4)
 
 Normalization is deliberately dictionary- and rule-driven rather than AI-driven: it
 must be fast, deterministic, and cheap, because it runs on every posting on every
@@ -497,7 +388,9 @@ Three tiers, cheapest first:
    `dedupHash = sha256(companySlug | normalizedTitle | countryCode)`, where
    `normalizedTitle` is lowercased with seniority words, `(m/f/d)`-style markers and
    punctuation removed. An exact hash match attaches the posting to the existing
-   `Job`.
+   `Job`. The column is `UNIQUE`, so two concurrent runs cannot create competing
+   canonical jobs; the losing insert catches the constraint violation and retries as
+   a match. `normalizedTitle` is stored, not only hashed, because tier 3 needs it.
 3. **Fuzzy match.** Only for postings unmatched by tier 2, and only within the same
    `companySlug`: `pg_trgm` similarity on the normalized title above a tuned
    threshold, confirmed by a description similarity check. Confidence below the
@@ -507,6 +400,11 @@ Three tiers, cheapest first:
 When postings merge into one `Job`, the canonical field values are taken from the
 posting with the richest description; every source URL stays reachable through the
 `postings` relation, so the UI can show "also listed on N sources".
+
+Because tier 3 is biased toward splitting, false splits are expected and must stay
+correctable. Merging two existing `Job` rows sets `mergedIntoJobId` on the loser
+rather than deleting it, so search excludes it (`mergedIntoJobId IS NULL`) while any
+`SavedJob` pointing at it still resolves through the redirect.
 
 ### 6.4 Classification
 
@@ -521,7 +419,8 @@ export interface JuniorClassifier {
 ```
 
 **Stage 1 — `RuleBasedClassifier` (always runs).**
-Pattern extraction over the normalized description:
+Pattern extraction over the normalized description, in **English and German from
+day one** — the pattern set is selected by `JobPosting.language`:
 
 - Experience ranges: `0–1`, `0-2`, `1+`, `3+`, `at least 5 years`,
   `mindestens 3 Jahre` and equivalent phrasings → `minYears` / `maxYears`
@@ -547,6 +446,11 @@ classifiers write a `JobClassification` row under their own `classifierVersion`;
 row used for display is flagged `isCurrent` and denormalized onto `Job`. Because
 versions are retained, a classifier change can be evaluated against past jobs before
 being promoted.
+
+The cache key is `JobClassification.inputHash` — the hash of the text that was
+classified. It both lets unchanged text skip re-classification and lets a job whose
+description changed keep the old and the new result under one `classifierVersion`.
+A partial unique index enforces exactly one `isCurrent` row per job.
 
 ### 6.5 Scoring
 
@@ -759,6 +663,10 @@ Response envelope:
 - Secrets (`JWT_SECRET`, `DATABASE_URL`, source API keys) come from environment
   variables through a validated typed config module. Nothing is hard-coded; `.env`
   is git-ignored with a committed `.env.example`.
+- **Authorization**: `User.role` is `USER` or `ADMIN`, defaulting to `USER`. A role
+  guard protects the manual ingestion trigger (§6); every other route is either
+  public or authenticated. The role is not exposed as a user-facing feature, and no
+  admin dashboard, role-management endpoint, or additional role is part of the MVP.
 - Global rate limiting via `@nestjs/throttler`, stricter on `/auth/*`.
 - CORS restricted to the configured frontend origin.
 
@@ -900,7 +808,8 @@ tomorrow's.
 | Application tracking | A new `Application` model referencing `Job` — `SavedJob` is its natural precursor |
 | Scale-out | `ingestion` is already isolated behind service interfaces: point its module at a queue-backed worker process and the API keeps serving reads unchanged |
 | Search growth | Query building is confined to `search.repository.ts`; swapping PostgreSQL FTS for a search engine touches one file |
-| Recruiter accounts, company dashboards | Would introduce a tenant/role dimension — deliberately deferred, since retrofitting roles later is cheaper than carrying unused multi-tenancy through the MVP |
+| Salary filtering and comparison | Structured salary fields are already captured on `Job` and `JobPosting`; only currency/period normalization and an index are missing |
+| Recruiter accounts, company dashboards | `User.role` already provides the role dimension. The tenant dimension and any administrative UI remain deliberately deferred, since retrofitting them later is cheaper than carrying unused multi-tenancy through the MVP |
 
 The monolith stays a monolith until a specific measured pressure justifies splitting
 it. The module boundaries above are the seams along which it would split.
@@ -914,13 +823,18 @@ it. The module boundaries above are the seams along which it would split.
    made in parallel with implementation. It blocks live ingestion only; every other
    part of the system, including the full frontend, can be built and tested against
    fixtures until it is resolved.
-2. **Multilingual descriptions.** The example search in `PRODUCT.md` §5 targets
-   Germany, so German postings are likely. The rule-based classifier needs German
-   patterns from day one, or an explicit decision to restrict the MVP to English
-   postings.
-3. **Fuzzy dedup threshold.** The `pg_trgm` similarity cutoff must be tuned against
+2. **Fuzzy dedup threshold.** The `pg_trgm` similarity cutoff must be tuned against
    real data; the initial value will be a conservative guess biased toward splitting
    rather than merging.
-4. **AI classifier in the MVP.** The design makes stage 2 optional. Whether it ships
+3. **AI classifier in the MVP.** The design makes stage 2 optional. Whether it ships
    in v1 or the MVP runs on rules alone is a cost/quality call to be made once
    rule-based accuracy is measured against the test corpus.
+4. **Language detection library.** English and German support is settled (§5.4), but
+   the detector that populates `language` is not chosen. Any library returning ISO
+   639-1 codes fits.
+
+**Resolved.** *Multilingual descriptions* — the MVP supports **English and German
+from day one**, rather than restricting to English. This is settled in the data
+model (`DATABASE.md` §5.1) because the full-text search configuration is baked into
+a generated column and is expensive to change later. The rule-based classifier
+carries German patterns from the start (§6.4).

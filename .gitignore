@@ -1,0 +1,16 @@
+# Environment files — these hold credentials.
+.env
+.env.*
+!.env.example
+
+# Dependencies and build output (both projects keep their own .gitignore too).
+node_modules/
+dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
