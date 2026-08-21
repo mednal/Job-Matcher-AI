@@ -16,19 +16,18 @@
 //   - the M2.4 slice (docs/DATABASE.md §3.3): JobPosting and Job — levels 2 and 3
 //     of the three-level job model. EmploymentType is defined here because both
 //     need it. No salary columns: D7 removed them from the design (§3.4).
+//   - the M2.5 slice (docs/DATABASE.md §3.5): JobClassification and SavedJob, the
+//     JuniorLevel enum, and Job's denormalized classification block — the block is
+//     listed under §3.3 but lands with the classification rows that populate it.
+//     This also unblocks `User.savedJobs`, deferred from M2.2 for want of SavedJob.
+//     The partial unique index enforcing one current classification per job cannot
+//     be expressed in Prisma; it is hand-written SQL in the M2.5 migration (§5).
 //
-// Deferred to M2.5, when JobClassification and SavedJob exist:
-//   - `User.savedJobs` (§3.1) and `Job.savedBy` / `Job.classifications` (§3.3) —
-//     Prisma cannot reference a model that isn't declared yet
-//   - the denormalized classification block on Job (`juniorLevel`, `juniorScore`,
-//     `requiredMinYears`, `requiredMaxYears`, `classifiedAt`) and the JuniorLevel
-//     enum, plus the two Job indexes that lead with those columns. §3.3 lists the
-//     block and M2.5 claims it; it lands with the classification that populates it.
-//
-// Deferred to M2.6, which adds the raw SQL Prisma cannot express (§5):
+// Deferred to M2.6, which adds the rest of the raw SQL Prisma cannot express (§5):
 //   - `Job.searchVector` (generated tsvector) and its GIN index
 //   - GIN indexes on `technologies`, the trigram index on `normalizedTitle`, the
-//     partial active-search index, and the §5 CHECK constraints
+//     partial active-search index, and the §5 CHECK constraints — including the
+//     range checks over `Job.juniorScore` and `JobClassification.score`
 
 generator client {
   provider = "prisma-client-js"
@@ -48,6 +47,16 @@ enum WorkplaceType {
   REMOTE
   ONSITE
   HYBRID
+}
+
+// Fixed by CLAUDE.md: must not be extended or renamed without a product decision
+// (docs/DATABASE.md §3.6). Ordered from most to least suitable for a junior.
+enum JuniorLevel {
+  ENTRY_LEVEL
+  LIKELY_ENTRY_LEVEL
+  AMBIGUOUS
+  EXPERIENCED
+  CLEARLY_EXPERIENCED
 }
 
 enum EmploymentType {
@@ -86,6 +95,7 @@ model User {
   updatedAt    DateTime @updatedAt @db.Timestamptz(3)
 
   profile       Profile?
+  savedJobs     SavedJob[]
   refreshTokens RefreshToken[]
 }
 
@@ -242,17 +252,80 @@ model Job {
   lastSeenAt        DateTime  @default(now()) @db.Timestamptz(3)
   isActive          Boolean   @default(true)
 
-  // The denormalized classification block (juniorLevel, juniorScore,
-  // requiredMinYears, requiredMaxYears, classifiedAt) lands in M2.5 with
-  // JobClassification — see the file header.
+  // Denormalized from the current JobClassification so search can filter and sort
+  // without a join. juniorScore is a 0–100 *suitability* score, never a probability
+  // of being hired (docs/DATABASE.md §4.2); its 0–100 CHECK arrives in M2.6 (§5).
+  // requiredMinYears/requiredMaxYears back the maxYearsRequired search parameter.
+  juniorLevel      JuniorLevel?
+  juniorScore      Int?
+  requiredMinYears Int?
+  requiredMaxYears Int?
+  classifiedAt     DateTime?    @db.Timestamptz(3)
 
   // A merged-away Job keeps its id and gains a redirect, so SavedJob rows stay
   // valid; search excludes it with `mergedIntoJobId IS NULL` (D2).
-  mergedInto Job?         @relation("JobMerge", fields: [mergedIntoJobId], references: [id])
-  mergedFrom Job[]        @relation("JobMerge")
-  postings   JobPosting[]
+  mergedInto      Job?                @relation("JobMerge", fields: [mergedIntoJobId], references: [id])
+  mergedFrom      Job[]               @relation("JobMerge")
+  postings        JobPosting[]
+  classifications JobClassification[]
+  savedBy         SavedJob[]
 
+  @@index([juniorLevel, effectivePostedAt(sort: Desc)]) // juniorLevel[] filter, recency sort
+  @@index([juniorScore(sort: Desc), effectivePostedAt(sort: Desc)]) // minJuniorScore filter
   @@index([countryCode, workplaceType]) // location and workplace facet filtering
   @@index([companySlug, normalizedTitle]) // dedup tier 3 candidate narrowing
   @@index([lastSeenAt]) // staleness sweep
+}
+
+// One classifier verdict for one job. Rows are never deleted: keeping every
+// version's output is what lets a new classifier be evaluated against past jobs
+// before it is promoted (docs/DATABASE.md §3.5).
+//
+// `inputHash` does double duty — it is the cache key that lets an unchanged
+// description skip re-classification, and it is what allows a job whose text
+// changed to hold both the old and the new result under one classifierVersion.
+//
+// Exactly one row per job carries isCurrent. Prisma cannot express a partial
+// unique index, so `JobClassification_one_current_idx` is raw SQL in this
+// milestone's migration (§5).
+model JobClassification {
+  id                String      @id @default(uuid())
+  jobId             String
+  classifierVersion String // "rules-1.0" | "llm-1.0"
+  inputHash         String // hash of the classified text
+  level             JuniorLevel
+  score             Int // 0–100 suitability — never a probability of being hired (§4.2)
+  minYears          Int? // experience requirement extracted from the description
+  maxYears          Int?
+  // Signal[] — { code, weight, evidence } per §4.1. Validated in code at the
+  // classifier boundary, not by the database, and never queried independently,
+  // which is why they are Json and carry no GIN index.
+  positiveSignals   Json
+  negativeSignals   Json
+  summary           String? // short human explanation, shown on the job detail page
+  isCurrent         Boolean     @default(true)
+  createdAt         DateTime    @default(now()) @db.Timestamptz(3)
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, classifierVersion, inputHash])
+  @@index([jobId, isCurrent]) // job detail evidence fetch
+  @@index([classifierVersion, createdAt]) // offline evaluation of a version
+}
+
+// The only user↔job relation in the MVP; application tracking is out of scope
+// (D7, §3.4). Pointing at Job rather than JobPosting is what keeps a save valid
+// when dedup merges the job away — the redirect resolves it (D2).
+model SavedJob {
+  id        String   @id @default(uuid())
+  userId    String
+  jobId     String
+  note      String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, jobId]) // idempotent save, duplicate prevention
+  @@index([userId, createdAt(sort: Desc)]) // /saved-jobs listing
 }

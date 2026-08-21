@@ -40,7 +40,7 @@ As of the last update to this file:
 | Source adapter architecture | Designed and approved 2026-08-21 (`ARCHITECTURE.md` §6.1, Phase 5 decisions A1–A7). Not implemented. `docs/SOURCES.md` review register created, no sources reviewed |
 | Angular workspace | Scaffolded only — default welcome page, no routes, no app code |
 | NestJS backend | Config, validation pipe, CORS, `/api/v1/health` (now `@Public()`), plus a working `AuthModule` and `UsersModule`: register, login, argon2id hashing, JWT access tokens, refresh-token rotation/revocation, logout, a global `JwtAuthGuard`, and `GET /users/me`. `RolesGuard` (M3.5) and `/profiles/me` (rest of M3.6) are not built. |
-| PostgreSQL / Prisma | Postgres 18 runs in Docker on host port 5433. `prisma/schema.prisma` now holds `User`, `Profile`, `RefreshToken`, `UserRole`, `WorkplaceType` (M2.2's slice, migration `20260821171157_add_user_auth_tables`) plus `JobSource`, `IngestionRun`, `RawJobDocument`, `AccessMethod`, `IngestionStatus`, `IngestionTrigger` (M2.3's slice, migration `20260821180642_add_source_ingestion_tables`) plus `JobPosting`, `Job` and `EmploymentType` (M2.4's slice, migration `20260821182202_add_job_tables`). Classification and saved-job tables do not exist yet — those start at M2.5, which also carries `Job`'s denormalized classification columns. |
+| PostgreSQL / Prisma | Postgres 18 runs in Docker on host port 5433. `prisma/schema.prisma` now holds `User`, `Profile`, `RefreshToken`, `UserRole`, `WorkplaceType` (M2.2's slice, migration `20260821171157_add_user_auth_tables`) plus `JobSource`, `IngestionRun`, `RawJobDocument`, `AccessMethod`, `IngestionStatus`, `IngestionTrigger` (M2.3's slice, migration `20260821180642_add_source_ingestion_tables`) plus `JobPosting`, `Job` and `EmploymentType` (M2.4's slice, migration `20260821182202_add_job_tables`) plus `JobClassification`, `SavedJob`, `JuniorLevel` and `Job`'s denormalized classification block (M2.5's slice, migration `20260821184731_add_classification_saved_job_tables`, which also hand-writes the partial unique index enforcing one current classification per job). Every MVP table of `DATABASE.md` §3 now exists; what remains in Phase 2 is the raw SQL of §5 (M2.6) and the seed script (M2.7). |
 | Everything else | Not started |
 
 Two working-tree notes: `docs/DATABASE.md` is untracked and `docs/ARCHITECTURE.md`
@@ -230,14 +230,48 @@ Goal: the schema of `DATABASE.md` exists in PostgreSQL, reachable through Prisma
   wait for M2.5. No `searchVector`, GIN, trigram, partial or CHECK work — that is M2.6.
 
 ### M2.5 — Classification and saved-job tables
-- [ ] `JobClassification`, `SavedJob`, and the enums of §3.6
-- [ ] Denormalized `juniorLevel`, `juniorScore`, `requiredMinYears`, `requiredMaxYears`,
+- [x] `JobClassification`, `SavedJob`, and the enums of §3.6
+- [x] Denormalized `juniorLevel`, `juniorScore`, `requiredMinYears`, `requiredMaxYears`,
       `classifiedAt` on `Job`, plus the `JuniorLevel` enum and the two `Job` indexes that
       lead with those columns (`@@index([juniorLevel, effectivePostedAt(sort: Desc)])`,
       `@@index([juniorScore(sort: Desc), effectivePostedAt(sort: Desc)])`) — §3.3 lists
       them on `Job`, but they belong here, with the classification that populates them
-- [ ] Partial unique index: exactly one `isCurrent` classification per job
+- [x] Partial unique index: exactly one `isCurrent` classification per job
 - Verify: inserting a second `isCurrent = true` row for one job fails.
+- Verified 2026-08-21: `prisma/schema.prisma` gained `JobClassification`, `SavedJob`
+  and the `JuniorLevel` enum, field-for-field as `DATABASE.md` §3.5/§3.6, plus
+  `Job`'s denormalized classification block and its two indexes from §3.3. Of the
+  seven enums in §3.6 only `JuniorLevel` was outstanding; the other six landed in
+  M2.2–M2.4. Migration `20260821184731_add_classification_saved_job_tables` applied
+  cleanly against Docker Postgres; `prisma validate` passes and the client
+  regenerates. The partial unique index is **hand-written SQL appended to the
+  generated migration** — Prisma cannot express it (§5); M2.5's checklist claims it
+  and owns its verify step, so it lands here rather than with the rest of §5.
+  Checked in the database (all inside one rolled-back transaction): the M2.5 verify
+  passes — a second `isCurrent = true` row for one job is **rejected** by
+  `JobClassification_one_current_idx`, while a superseded `isCurrent = false` row
+  for that same job is accepted and a *different* job keeps its own current row;
+  re-inserting the same `(jobId, classifierVersion, inputHash)` is rejected by
+  `JobClassification_jobId_classifierVersion_inputHash_key`; saving the same job
+  twice for one user is rejected by `SavedJob_userId_jobId_key` while a second,
+  different job saves fine; deleting a `Job` cascades away its classifications and
+  saves, and deleting a `User` cascades away theirs. `information_schema` confirms
+  **no column matching `%salar%`** (D7, §3.4) and no column named `probability`,
+  `chance`, `likelihood` or `successRate` anywhere in the schema (§4.2).
+  `User.savedJobs`, deferred since M2.2, is no longer deferred; `Job.classifications`
+  and `Job.savedBy` are wired. Backend `npm test` passes (8 suites / 40 tests),
+  `npm run test:e2e` passes (2 suites / 18 tests), `npm run build` and `eslint` are
+  clean. No classifier, scoring or saved-jobs service code was written — those are
+  Phases 8 and 10.
+- Deferred to M2.6 by decision, not oversight: the §5 CHECK constraints over columns
+  this milestone creates (`Job_juniorScore_range`, `JobClassification_score_range`,
+  `JobClassification_years_order`). §3.3/§3.5 annotate those columns "CHECK enforced"
+  but M2.6's checklist explicitly claims "CHECK constraints from §5". The overlap was
+  raised and resolved in favour of M2.6, keeping §5's raw-SQL block as one unit; the
+  gap is harmless because nothing writes to these columns until Phase 8, well after
+  M2.6. Confirmed absent in the database: no `pg_trgm`, no `searchVector`, no CHECK
+  constraint on `Job` or `JobClassification`, and no `Job_active_search_idx` — the
+  partial index leads with `juniorScore` but is raw SQL and belongs to M2.6.
 
 ### M2.6 — Raw SQL migration
 - [ ] `pg_trgm` extension enabled
