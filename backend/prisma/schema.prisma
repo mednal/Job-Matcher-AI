@@ -23,11 +23,34 @@
 //     The partial unique index enforcing one current classification per job cannot
 //     be expressed in Prisma; it is hand-written SQL in the M2.5 migration (§5).
 //
-// Deferred to M2.6, which adds the rest of the raw SQL Prisma cannot express (§5):
-//   - `Job.searchVector` (generated tsvector) and its GIN index
-//   - GIN indexes on `technologies`, the trigram index on `normalizedTitle`, the
-//     partial active-search index, and the §5 CHECK constraints — including the
-//     range checks over `Job.juniorScore` and `JobClassification.score`
+//   - the M2.6 slice (docs/DATABASE.md §5, §7): the rest of the raw SQL Prisma
+//     cannot express, in migration 20260821190950_add_search_indexes_and_checks —
+//     the pg_trgm extension, the generated `Job.searchVector` column, GIN indexes on
+//     searchVector / technologies / normalizedTitle (trigram), the partial
+//     Job_active_search_idx, and the four §5 CHECK constraints, including the 0–100
+//     range checks over `Job.juniorScore` and `JobClassification.score`. With it, §7's
+//     index inventory is complete (25/25).
+//
+// READ THIS BEFORE RUNNING `prisma migrate dev`
+//
+// Some M2.6 objects exist only in raw SQL, so Prisma treats them as drift and
+// proposes to remove them. Two mitigations are in force, and one hazard is not
+// fixable:
+//   - The three GIN indexes are declared below with `map:` pinning the names the
+//     migration already created. Without those declarations Prisma emits DROP INDEX
+//     for all three. They describe existing indexes; they do not create a second set.
+//   - `searchVector` is typed Unsupported("tsvector") for the same reason (§5).
+//   - NOT FIXABLE: Prisma has no concept of a generated column, so it will always
+//     want to emit `ALTER TABLE "Job" ALTER COLUMN "searchVector" DROP DEFAULT`.
+//     PostgreSQL rejects that outright (42601, "is a generated column"), so it fails
+//     loudly rather than silently dropping the expression — but it does mean
+//     `prisma migrate dev` must never be run bare on this schema. Always use
+//     --create-only and read the generated SQL before applying it.
+//
+// Also note: M2.5's migration was hand-edited after it had already been applied, so
+// its recorded checksum was stale and was repaired in place rather than by resetting
+// the database. That migration has not yet been proven to apply cleanly from scratch
+// against an empty database. See M2.6's notes in docs/MILESTONES.md.
 
 generator client {
   provider = "prisma-client-js"

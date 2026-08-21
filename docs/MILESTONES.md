@@ -40,7 +40,7 @@ As of the last update to this file:
 | Source adapter architecture | Designed and approved 2026-08-21 (`ARCHITECTURE.md` §6.1, Phase 5 decisions A1–A7). Not implemented. `docs/SOURCES.md` review register created, no sources reviewed |
 | Angular workspace | Scaffolded only — default welcome page, no routes, no app code |
 | NestJS backend | Config, validation pipe, CORS, `/api/v1/health` (now `@Public()`), plus a working `AuthModule` and `UsersModule`: register, login, argon2id hashing, JWT access tokens, refresh-token rotation/revocation, logout, a global `JwtAuthGuard`, and `GET /users/me`. `RolesGuard` (M3.5) and `/profiles/me` (rest of M3.6) are not built. |
-| PostgreSQL / Prisma | Postgres 18 runs in Docker on host port 5433. `prisma/schema.prisma` now holds `User`, `Profile`, `RefreshToken`, `UserRole`, `WorkplaceType` (M2.2's slice, migration `20260821171157_add_user_auth_tables`) plus `JobSource`, `IngestionRun`, `RawJobDocument`, `AccessMethod`, `IngestionStatus`, `IngestionTrigger` (M2.3's slice, migration `20260821180642_add_source_ingestion_tables`) plus `JobPosting`, `Job` and `EmploymentType` (M2.4's slice, migration `20260821182202_add_job_tables`) plus `JobClassification`, `SavedJob`, `JuniorLevel` and `Job`'s denormalized classification block (M2.5's slice, migration `20260821184731_add_classification_saved_job_tables`, which also hand-writes the partial unique index enforcing one current classification per job). Every MVP table of `DATABASE.md` §3 now exists; what remains in Phase 2 is the raw SQL of §5 (M2.6) and the seed script (M2.7). |
+| PostgreSQL / Prisma | Postgres 18 runs in Docker on host port 5433. `prisma/schema.prisma` now holds `User`, `Profile`, `RefreshToken`, `UserRole`, `WorkplaceType` (M2.2's slice, migration `20260821171157_add_user_auth_tables`) plus `JobSource`, `IngestionRun`, `RawJobDocument`, `AccessMethod`, `IngestionStatus`, `IngestionTrigger` (M2.3's slice, migration `20260821180642_add_source_ingestion_tables`) plus `JobPosting`, `Job` and `EmploymentType` (M2.4's slice, migration `20260821182202_add_job_tables`) plus `JobClassification`, `SavedJob`, `JuniorLevel` and `Job`'s denormalized classification block (M2.5's slice, migration `20260821184731_add_classification_saved_job_tables`, which also hand-writes the partial unique index enforcing one current classification per job). Every MVP table of `DATABASE.md` §3 now exists. M2.6's slice (migration `20260821190950_add_search_indexes_and_checks`, commit `f3cb483`) adds the raw SQL of §5: the `pg_trgm` extension, the generated `Job.searchVector` column, GIN indexes on `searchVector`, `technologies` and `normalizedTitle` (trigram), the partial `Job_active_search_idx`, and all four CHECK constraints — so §7's index inventory is 25/25 complete. The three GIN indexes are also declared in `schema.prisma` purely to stop Prisma proposing to drop them; see M2.6's fragile-point note before running `prisma migrate dev`. What remains in Phase 2 is the seed script (M2.7). |
 | Everything else | Not started |
 
 Two working-tree notes: `docs/DATABASE.md` is untracked and `docs/ARCHITECTURE.md`
@@ -274,11 +274,71 @@ Goal: the schema of `DATABASE.md` exists in PostgreSQL, reachable through Prisma
   partial index leads with `juniorScore` but is raw SQL and belongs to M2.6.
 
 ### M2.6 — Raw SQL migration
-- [ ] `pg_trgm` extension enabled
-- [ ] Language-aware generated `tsvector` column on `Job` plus its GIN index (§5)
-- [ ] GIN index on `technologies`; CHECK constraints from §5
-- [ ] Index inventory of §7 created
+- [x] `pg_trgm` extension enabled
+- [x] Language-aware generated `tsvector` column on `Job` plus its GIN index (§5)
+- [x] GIN index on `technologies`; CHECK constraints from §5
+- [x] Index inventory of §7 created
 - Verify: `EXPLAIN` on a full-text query uses the GIN index, not a sequential scan.
+- Verified 2026-08-21: migration `20260821190950_add_search_indexes_and_checks`
+  (committed as `f3cb483`) applies §5's raw SQL — `pg_trgm`, the generated
+  `Job.searchVector`, the three GIN indexes, the partial `Job_active_search_idx`, and
+  all four CHECK constraints. §5's `JobClassification_one_current_idx` is deliberately
+  **not** repeated: M2.5's migration created it and keeps ownership. Checked against
+  the live database, not merely that the migration ran:
+  - `pg_trgm` v1.6 installed; `similarity()` callable.
+  - `searchVector` is a genuinely generated column (`pg_attribute.attgenerated = 's'`),
+    not the plain `tsvector` Prisma first generated. A `de` row's stored vector equals
+    the **german**-configuration expression and differs from the english one, so D3's
+    CASE is load-bearing rather than decorative. Direct writes to the column are
+    rejected by PostgreSQL; the vector recomputes on a title edit and on a `de`→`en`
+    language flip.
+  - All four CHECKs tested at their boundaries: `-1` and `101` rejected while `0` and
+    `100` are accepted, `NULL` accepted for an unclassified job; `minYears 5 >
+    maxYears 2` rejected while `2 ≤ 5`, `3 = 3` and either-side-NULL are accepted;
+    `Profile.yearsOfExperience` `-1`/`61` rejected, `0`/`60`/`2` accepted.
+  - The verify line passes at realistic volume: over 5001 rows the English and German
+    full-text queries, the weighted `ts_rank` ordering, the `technologies` containment
+    filter, the trigram title match and the default search ordering each use their
+    index with **no** Seq Scan. The first attempt failed misleadingly because the rows
+    were bulk-loaded inside a transaction, leaving every GIN entry in the pending list
+    and inflating the planner's cost estimate; `VACUUM` cannot run inside a
+    transaction block, so the check must load, `VACUUM ANALYZE`, `EXPLAIN`, then clean
+    up. Worth knowing before M2.7's seed fixtures are used for the same purpose.
+  - §7 index inventory audited end to end: **25/25 entries present**. The only indexes
+    in the database that §7 does not list are `@unique` constraints declared in §3
+    models plus the two `IngestionRun` indexes — §7 does not restate those.
+  - Backend `npm test` passes (8 suites / 40 tests), `npm run test:e2e` passes
+    (2 suites / 18 tests), `npm run build` and `npm run lint` are clean. A bare
+    `npx eslint .` reports errors from `dist/`; the project's `lint` script scopes to
+    `{src,apps,libs,test}` and is the one that counts.
+- **Fragile point — Prisma drift will try to destroy this milestone's work.** Run
+  `prisma migrate diff --from-url $DATABASE_URL --to-schema-datamodel
+  prisma/schema.prisma --script` and Prisma proposes changes it believes reconcile the
+  database with the schema. Before mitigation it wanted to `DROP` all three GIN indexes
+  **and** strip the generated column. Mitigation: the three GIN indexes are now declared
+  in `schema.prisma` with `map:` pinning the names the migration already created — the
+  same "raw SQL creates it, the schema declares it so Prisma leaves it alone" pattern
+  §5 already mandates for `searchVector Unsupported("tsvector")?`. That is a judgment
+  call slightly beyond §5's literal text, recorded here rather than left implicit.
+  After it, the diff is down to one irreducible statement, `ALTER TABLE "Job" ALTER
+  COLUMN "searchVector" DROP DEFAULT`, because Prisma has no concept of a generated
+  column. PostgreSQL **rejects** that statement outright (`42601`, "is a generated
+  column"), so it fails loudly instead of silently dropping the expression — but it
+  means **`prisma migrate dev` can never be run bare on this schema.** Always
+  `--create-only`, then read the generated SQL before applying. Anyone adding a model
+  in Phase 3+ hits this.
+- **Known issue — M2.5's migration checksum was stale and was repaired, not reset.**
+  M2.5's partial unique index was hand-appended to `20260821184731_...` *after* Prisma
+  had already applied that file, so the `_prisma_migrations` checksum recorded the
+  pre-edit content (`e678072d…`) while the file hashed to `b7f19a35…`. This blocked
+  `migrate dev` with "the migration was modified after it was applied". `migrate reset`
+  was rejected by tooling policy, so the non-destructive route was taken: every
+  application table was confirmed to hold 0 rows and every object the edited file
+  produces was confirmed already present in the database, then the recorded checksum
+  was updated to the file's actual hash. The recorded state is now accurate.
+  **Still unproven: that migration has never been applied from scratch as it now
+  stands.** A fresh `prisma migrate deploy` against a throwaway database would close
+  this, and is worth doing before anyone relies on the migration chain in CI.
 
 ### M2.7 — Seed script
 - [ ] Seed creates a demo user and a fixture job set with classifications
