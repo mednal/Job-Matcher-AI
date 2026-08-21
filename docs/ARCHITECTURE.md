@@ -212,7 +212,7 @@ What that document settles, and this section no longer restates:
 | Area | See |
 | ---- | --- |
 | Full Prisma schema and enums | `DATABASE.md` §3 |
-| Salary fields (stored, not filtered) | `DATABASE.md` §3.4 |
+| What the MVP schema deliberately omits (D7) | `DATABASE.md` §3.4 |
 | Classification evidence and score naming | `DATABASE.md` §4 |
 | Generated `tsvector`, partial indexes, CHECK constraints | `DATABASE.md` §5 |
 | Canonical slugs for company, title, technologies | `DATABASE.md` §6 |
@@ -236,6 +236,11 @@ The structural commitments that constrain the rest of this document:
   sorts without a join (§8.1).
 - **`RawJobDocument` is keyed by content hash**, so an unchanged re-fetch writes no
   row. This is what keeps the 90-day retention policy affordable (§5.5).
+
+- **Salary, company entities, job taxonomy, and application tracking are not in
+  the MVP schema** (D7). Salary in particular is not captured at all — it stays
+  unparsed inside `description`, so §6.2 has no salary stage and §8.1 has no salary
+  parameter. `DATABASE.md` §3.4 records the exclusions and their cost.
 
 Technologies are PostgreSQL `String[]` with a GIN index in the MVP; there is no
 `Technology` table. Primary keys are UUIDs throughout.
@@ -325,9 +330,8 @@ Every integration implements one interface:
 
 ```ts
 export interface JobSourceAdapter {
-  readonly key: string;
-  readonly displayName: string;
-  fetchJobs(params: SourceFetchParams): Promise<RawJob[]>;
+  readonly descriptor: SourceDescriptor;
+  fetchJobs(params: SourceFetchParams, ctx: FetchContext): AsyncIterable<RawJob>;
 }
 
 export interface SourceFetchParams {
@@ -337,16 +341,57 @@ export interface SourceFetchParams {
   limit: number;
 }
 
+export interface FetchContext {
+  readonly runId: string;
+  readonly signal: AbortSignal;   // run budget exhausted, or shutdown
+  readonly logger: Logger;        // pre-tagged with sourceKey + runId
+}
+
 export interface RawJob {
-  externalId: string;
-  url: string;
-  payload: unknown;   // stored verbatim in RawJobDocument
+  externalId: string;   // stable within this source, permanently
+  url: string;          // absolute https URL of the original posting
+  payload: unknown;     // stored verbatim in RawJobDocument
+  postedAt?: Date;      // only when the source states it — enables the `since` early-stop
 }
 ```
 
+`fetchJobs` returns an **`AsyncIterable`, not a `Promise<RawJob[]>`**. Returning an
+array would force every adapter to run its own pagination loop and hold a full
+result set in memory, putting the loop — where rate-limit and stop-condition
+mistakes actually happen — in per-source code that gets the least review. Streaming
+gives the orchestrator ownership of backpressure, the page cap, and early
+termination; adapters implement a single page and the shared base drives it.
+
+Compliance metadata is not prose. Every adapter carries a machine-readable
+descriptor, the executable twin of the header comment §7.3 requires:
+
+```ts
+export interface SourceDescriptor {
+  readonly key: string;                     // matches JobSource.key
+  readonly displayName: string;
+  readonly accessMethod: AccessMethod;      // §7.1 — no scraping value exists
+  readonly termsUrl: string;                // the terms permitting this access
+  readonly attributionText?: string;        // when the source requires attribution
+  readonly complianceNote: string;          // why this method is permitted here
+  readonly ordering: 'RECENT_FIRST' | 'UNSPECIFIED';
+  readonly volatilePayloadPaths?: string[]; // excluded from RawJobDocument.contentHash
+  readonly defaults: { rateLimitRps: number; pageSize: number; maxPages: number };
+}
+```
+
+Registration validates the descriptor and **refuses to boot** on a missing
+`accessMethod`, `termsUrl`, or `complianceNote`, so §7.3 is enforced by the
+application rather than by reviewer memory. Compliance fields are authoritative in
+code and synced one-directionally into `JobSource`; only `JobSource.enabled` is
+owned by the database, so a misbehaving source can be stopped without a deploy.
+
 Adapters are registered in a `SOURCE_ADAPTERS` injection token array, so adding a
-source is one new file plus one provider entry. Nothing outside `sources/` may
+source is one new directory plus one provider entry. Nothing outside `sources/` may
 import a concrete adapter or reference a source-specific field name.
+
+Adapters never call the network directly: they receive a shared HTTP client that has
+already applied the User-Agent, rate limiting, retry policy, timeout, and error
+classification, so no adapter can accidentally bypass §7's guardrails.
 
 Which sources may be integrated, and by what access method, is governed by §7. That
 policy is binding on every adapter and takes precedence over any convenience this
@@ -368,10 +413,10 @@ shape. Responsibilities:
 - Technology extraction against a curated skill dictionary → `technologies[]`
 - Language detection → ISO 639-1 `language`, which selects the text-search
   configuration (§5.4) and the classifier's pattern set (§6.4)
-- Salary extraction → `salaryMin`, `salaryMax`, `salaryCurrency`, `salaryPeriod`,
-  plus the verbatim `salaryText` the values were parsed from. Partial extraction is
-  normal and acceptable; salary is stored and displayed but **not filtered on** in
-  the MVP (`DATABASE.md` §3.4)
+
+There is **no salary stage**. D7 excludes salary from the MVP schema entirely
+(`DATABASE.md` §3.4), so any salary text a posting contains stays inside
+`description`, unparsed.
 
 Normalization is deliberately dictionary- and rule-driven rather than AI-driven: it
 must be fast, deterministic, and cheap, because it runs on every posting on every
@@ -808,7 +853,8 @@ tomorrow's.
 | Application tracking | A new `Application` model referencing `Job` — `SavedJob` is its natural precursor |
 | Scale-out | `ingestion` is already isolated behind service interfaces: point its module at a queue-backed worker process and the API keeps serving reads unchanged |
 | Search growth | Query building is confined to `search.repository.ts`; swapping PostgreSQL FTS for a search engine touches one file |
-| Salary filtering and comparison | Structured salary fields are already captured on `Job` and `JobPosting`; only currency/period normalization and an index are missing |
+| Salary display and filtering | Excluded from the MVP by D7 (`DATABASE.md` §3.4). Adding it is one migration plus a normalization stage, but it cannot be backfilled past the 90-day raw-document window |
+| Company entities, job taxonomy, application tracking | Also excluded by D7. `companySlug`, `technologies[]`, and `SavedJob` are the respective extraction points |
 | Recruiter accounts, company dashboards | `User.role` already provides the role dimension. The tenant dimension and any administrative UI remain deliberately deferred, since retrofitting them later is cheaper than carrying unused multi-tenancy through the MVP |
 
 The monolith stays a monolith until a specific measured pressure justifies splitting
@@ -832,9 +878,24 @@ it. The module boundaries above are the seams along which it would split.
 4. **Language detection library.** English and German support is settled (§5.4), but
    the detector that populates `language` is not chosen. Any library returning ISO
    639-1 codes fits.
+5. **Which queries ingestion runs.** `SourceFetchParams` carries `query` and
+   `location`, but ingestion is a background crawl with no user request to take them
+   from, and nothing yet specifies who supplies them. The proposal is a curated
+   per-source **ingestion plan** — a list of `{ query, location }` seeds aimed at
+   junior-relevant roles — with `since` derived from the last successful run's
+   `startedAt` minus a small overlap window. This blocks ingestion **orchestration**
+   (M5.4), not the adapter interface or the HTTP layer (M5.1–M5.3).
 
 **Resolved.** *Multilingual descriptions* — the MVP supports **English and German
 from day one**, rather than restricting to English. This is settled in the data
 model (`DATABASE.md` §5.1) because the full-text search configuration is baked into
 a generated column and is expensive to change later. The rule-based classifier
 carries German patterns from the start (§6.4).
+
+**Resolved.** *Source adapter shape* — `fetchJobs` streams via `AsyncIterable`
+rather than returning `Promise<RawJob[]>`, and compliance metadata moves onto a
+validated `SourceDescriptor` that the application refuses to boot without (§6.1).
+
+**Resolved.** *MVP schema scope* — salary, company entities, job taxonomy, and
+application tracking are excluded from the MVP schema (D7, `DATABASE.md` §3.4). This
+revises the earlier D7, which had specified structured salary fields.

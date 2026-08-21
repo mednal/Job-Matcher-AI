@@ -28,10 +28,12 @@ describe('Health (e2e)', () => {
     await app.close();
   });
 
+  // The payload gained `database` in M2.1, when HealthService started probing
+  // Postgres through Prisma — see HealthStatus in health.service.ts.
   it('/api/v1/health (GET)', () => {
     return request(app.getHttpServer())
       .get('/api/v1/health')
       .expect(200)
-      .expect({ status: 'ok' });
+      .expect({ status: 'ok', database: 'ok' });
   });
 });

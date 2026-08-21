@@ -40,7 +40,7 @@ These were reviewed and approved. They are binding on implementation.
 | D4 | Authorization | **`User.role` with `USER` and `ADMIN`.** Guards the admin-only ingestion trigger. **No admin dashboard is built in the MVP** — the role exists to guard an existing endpoint, nothing more. |
 | D5 | `technologies` storage | **PostgreSQL `String[]`** with a GIN index. No `Technology` table in the MVP. |
 | D6 | Primary keys | **UUID** on every table. |
-| D7 | Salary | **Structured salary fields on `Job` and `JobPosting`**: `salaryMin`, `salaryMax`, `salaryCurrency`, `salaryPeriod`, `salaryText`. Stored and displayed only — **salary filtering is not implemented**, and no salary index exists (§7). |
+| D7 | MVP schema scope | **Salary, company entities, job taxonomy, and application tracking are not in the MVP schema.** No salary columns on `Job` or `JobPosting`; no `Company` model (company stays `companyName` + `companySlug`); no taxonomy tables (technologies stay `String[]`, per D5); no `Application` model. Each is recorded in §9 as a future addition. **Supersedes the earlier D7**, which specified five structured salary fields — see §3.4 for what changed and what it costs. |
 | — | `Signal` JSON | **Kept deliberately minimal** (§4.1). Not over-designed at this stage. |
 
 Questions still open are listed in §10.
@@ -225,12 +225,6 @@ model JobPosting {
   contentHash    String                         // skip re-classify when unchanged
   technologies   String[]
 
-  salaryMin      Decimal?        @db.Decimal(12, 2)
-  salaryMax      Decimal?        @db.Decimal(12, 2)
-  salaryCurrency String?         @db.Char(3)    // ISO 4217
-  salaryPeriod   SalaryPeriod?
-  salaryText     String?                        // verbatim excerpt from the posting
-
   postedAt       DateTime?       @db.Timestamptz(3)
   firstSeenAt    DateTime        @default(now()) @db.Timestamptz(3)
   lastSeenAt     DateTime        @default(now()) @db.Timestamptz(3)
@@ -260,12 +254,6 @@ model Job {
   technologies    String[]
   dedupHash       String          @unique       // D1 — exact-match clustering key
   mergedIntoJobId String?                       // D2 — redirect after a merge
-
-  salaryMin      Decimal?         @db.Decimal(12, 2)
-  salaryMax      Decimal?         @db.Decimal(12, 2)
-  salaryCurrency String?          @db.Char(3)
-  salaryPeriod   SalaryPeriod?
-  salaryText     String?
 
   postedAt          DateTime?     @db.Timestamptz(3)
   effectivePostedAt DateTime      @db.Timestamptz(3)   // coalesce(postedAt, firstSeenAt)
@@ -314,35 +302,36 @@ Notes on specific fields:
   `mergedIntoJobId IS NULL`. Saved jobs pointing at it stay valid and resolve
   through the redirect.
 
-### 3.4 Salary (D7)
+### 3.4 Deliberately absent from the MVP schema (D7)
 
-Salary is captured in five fields on both `JobPosting` and `Job`:
+Four things a job platform might be expected to model are **not** in the MVP schema.
+This section records that they were considered and excluded, so their absence reads
+as a decision rather than an oversight.
 
-| Field | Meaning |
-| ----- | ------- |
-| `salaryMin` | Lower bound, `Decimal(12,2)` — handles hourly rates as well as annual figures |
-| `salaryMax` | Upper bound; equal to `salaryMin` when a single figure is stated |
-| `salaryCurrency` | ISO 4217 alpha-3, uppercase |
-| `salaryPeriod` | `HOURLY`, `DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY` |
-| `salaryText` | The verbatim excerpt the values were parsed from |
+| Excluded | What the MVP does instead | Where it would go later |
+| -------- | ------------------------- | ----------------------- |
+| **Salary** | Not captured. Salary text stays inside `description`, unparsed and unindexed. | Five nullable columns on `Job` and `JobPosting` plus a `SalaryPeriod` enum — §9 |
+| **Company entities** | `companyName` (display) + `companySlug` (dedup partition key, §6) as plain columns. | A `Company` model extracted from `companySlug` — §9 |
+| **Job taxonomy** | `technologies String[]` with a GIN index (D5) and a curated dictionary at normalization time. | Taxonomy tables with hierarchy and synonyms — §9 |
+| **Application tracking** | Not modelled. `SavedJob` is the only user↔job relation. | An `Application` model referencing `Job` — §9 |
 
-All five are nullable. Most postings state no salary, and partial extraction is
-normal — a `salaryText` with no parsed bounds is a valid state.
+The reasoning is the same in all four cases: none of them is required by the core
+product value (`CLAUDE.md`) — helping a junior developer judge whether a job is
+genuinely entry-level. Each adds schema, migration, and normalization surface that
+the MVP's classification and search paths never read.
 
-`salaryText` exists for the same reason classification evidence does: a parsed
-number that cannot be traced back to its source text cannot be debugged, and should
-not be displayed as fact.
+**The cost of excluding salary, stated plainly.** `RawJobDocument` rows are
+hard-deleted after 90 days (§8). Salary cannot be backfilled from raw payloads that
+have already expired, so if salary is added later, every posting ingested more than
+90 days earlier will permanently lack it. Adding salary is therefore cheap in
+migration terms but lossy in historical terms — the data restarts from the day the
+column appears. This was accepted knowingly when D7 was revised.
 
-**Salary filtering is not implemented in the MVP.** These fields are populated by
-normalization and displayed on the job detail view. There is deliberately **no index
-on any salary column** — an unused index is write cost with no read benefit. The
-search parameters in `docs/ARCHITECTURE.md` §8.1 are unchanged.
-
-Comparing salaries across currencies and periods requires normalization to a common
-basis, which requires exchange rates and assumptions about hours per year. That is
-out of MVP scope, and it is why filtering is deferred rather than the fields being
-omitted: capturing the data now costs one migration, whereas backfilling it later is
-impossible once raw documents expire after 90 days (§8).
+Superseded: the earlier D7 specified `salaryMin`, `salaryMax`, `salaryCurrency`,
+`salaryPeriod`, and `salaryText` on both `JobPosting` and `Job`, populated by
+normalization and displayed but never filtered on. No migration ever created those
+columns, so this revision removes them from the design only — there is no schema
+change to unwind.
 
 ### 3.5 Classification and saved jobs
 
@@ -400,7 +389,6 @@ enum UserRole         { USER ADMIN }
 enum JuniorLevel      { ENTRY_LEVEL LIKELY_ENTRY_LEVEL AMBIGUOUS EXPERIENCED CLEARLY_EXPERIENCED }
 enum WorkplaceType    { REMOTE ONSITE HYBRID }
 enum EmploymentType   { FULL_TIME PART_TIME INTERNSHIP CONTRACT WORKING_STUDENT }
-enum SalaryPeriod     { HOURLY DAILY WEEKLY MONTHLY YEARLY }
 enum IngestionStatus  { RUNNING SUCCESS FAILED }
 enum IngestionTrigger { SCHEDULED MANUAL }
 enum AccessMethod     { PUBLIC_API PARTNER_API OFFICIAL_FEED DATA_AGREEMENT LICENSED_CONTENT }
@@ -499,10 +487,6 @@ CREATE INDEX "Job_active_search_idx"
 -- Domain constraints. Prisma has no CHECK support.
 ALTER TABLE "Job" ADD CONSTRAINT "Job_juniorScore_range"
   CHECK ("juniorScore" IS NULL OR ("juniorScore" BETWEEN 0 AND 100));
-ALTER TABLE "Job" ADD CONSTRAINT "Job_salary_order"
-  CHECK ("salaryMin" IS NULL OR "salaryMax" IS NULL OR "salaryMin" <= "salaryMax");
-ALTER TABLE "JobPosting" ADD CONSTRAINT "JobPosting_salary_order"
-  CHECK ("salaryMin" IS NULL OR "salaryMax" IS NULL OR "salaryMin" <= "salaryMax");
 ALTER TABLE "JobClassification" ADD CONSTRAINT "JobClassification_score_range"
   CHECK ("score" BETWEEN 0 AND 100);
 ALTER TABLE "JobClassification" ADD CONSTRAINT "JobClassification_years_order"
@@ -593,9 +577,9 @@ should not be created.
 | `RawJobDocument(sourceId, externalId, fetchedAt DESC)` | Replay the latest payload for re-normalization |
 | `RawJobDocument.fetchedAt` | 90-day retention delete |
 
-Deliberately **not** indexed: all salary columns (D7 — no filtering in the MVP),
-`Profile` scalar arrays (read only for the owning user), and the `Signal` JSON
-columns (§4.1).
+Deliberately **not** indexed: `Profile` scalar arrays (read only for the owning
+user) and the `Signal` JSON columns (§4.1). Salary needs no entry here — D7 removed
+the columns entirely (§3.4).
 
 Pagination is offset-based with `pageSize ≤ 50` (`docs/ARCHITECTURE.md` §8.1). Offset
 pagination degrades on deep pages; at MVP result volumes it is the right trade, and
@@ -641,9 +625,11 @@ Recorded so today's schema does not block tomorrow's.
 | CV-to-job matching, skill-gap analysis | `Job.technologies[]` plus stored classification evidence; a `CvDocument` model attaches to `User` |
 | Personalized matching | Profile-fit ranking is applied at query time, so the stored score stays user-independent and cacheable |
 | Subscriptions and billing | `User` gains a `plan` field; entitlement checks fit as a guard alongside the existing role guard |
-| Application tracking | An `Application` model referencing `Job`; `SavedJob` is its precursor |
-| Salary filtering and comparison | Structured salary fields are already captured (D7); only currency/period normalization and an index are missing |
-| Recruiter accounts, company dashboards | `User.role` already exists as the role dimension; a `Company` entity would be extracted from `companySlug` |
+| Application tracking | An `Application` model referencing `Job`; `SavedJob` is its precursor (excluded from the MVP by D7, §3.4) |
+| Salary display, filtering and comparison | Excluded from the MVP by D7 (§3.4). Adding it is five nullable columns on `Job` and `JobPosting` plus a `SalaryPeriod` enum and a normalization stage — one migration, but historically lossy: postings older than the 90-day raw-document window cannot be backfilled |
+| Company entities | `companySlug` is already the dedup partition key and a stable join target, so a `Company` model extracts from existing columns without touching `JobPosting` (excluded by D7, §3.4) |
+| Job taxonomy | `technologies String[]` (D5) is a flat vocabulary today; hierarchy and synonyms become taxonomy tables that read from the same curated dictionary (excluded by D7, §3.4) |
+| Recruiter accounts, company dashboards | `User.role` already exists as the role dimension |
 | Search growth | Query building is confined to `search.repository.ts`; swapping PostgreSQL FTS for a search engine touches one file |
 
 ---

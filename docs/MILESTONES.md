@@ -2,7 +2,8 @@
 
 Status: living document
 Scope: MVP roadmap (Part I) + recorded post-MVP direction (Part II)
-Sources: `CLAUDE.md`, `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/DATABASE.md`
+Sources: `CLAUDE.md`, `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/DATABASE.md`,
+`docs/SOURCES.md`
 
 ## How to read this document
 
@@ -35,10 +36,11 @@ As of the last update to this file:
 
 | Area | State |
 | ---- | ----- |
-| Product / architecture / database design | Written (`PRODUCT.md`, `ARCHITECTURE.md`, `DATABASE.md`) |
+| Product / architecture / database design | Written (`PRODUCT.md`, `ARCHITECTURE.md`, `DATABASE.md`). D1–D7 closed; D7 **revised 2026-08-21** to exclude salary, company entities, job taxonomy, and application tracking from the MVP schema (`DATABASE.md` §3.4) |
+| Source adapter architecture | Designed and approved 2026-08-21 (`ARCHITECTURE.md` §6.1, Phase 5 decisions A1–A7). Not implemented. `docs/SOURCES.md` review register created, no sources reviewed |
 | Angular workspace | Scaffolded only — default welcome page, no routes, no app code |
 | NestJS backend | Config, validation pipe, CORS, `/api/v1/health` (now `@Public()`), plus a working `AuthModule` and `UsersModule`: register, login, argon2id hashing, JWT access tokens, refresh-token rotation/revocation, logout, a global `JwtAuthGuard`, and `GET /users/me`. `RolesGuard` (M3.5) and `/profiles/me` (rest of M3.6) are not built. |
-| PostgreSQL / Prisma | Postgres 18 runs in Docker on host port 5433. `prisma/schema.prisma` now holds `User`, `Profile`, `RefreshToken`, `UserRole`, `WorkplaceType` (M2.2's slice, migration `20260821171157_add_user_auth_tables`). No other tables exist yet — those start at M2.3. |
+| PostgreSQL / Prisma | Postgres 18 runs in Docker on host port 5433. `prisma/schema.prisma` now holds `User`, `Profile`, `RefreshToken`, `UserRole`, `WorkplaceType` (M2.2's slice, migration `20260821171157_add_user_auth_tables`) plus `JobSource`, `IngestionRun`, `RawJobDocument`, `AccessMethod`, `IngestionStatus`, `IngestionTrigger` (M2.3's slice, migration `20260821180642_add_source_ingestion_tables`) plus `JobPosting`, `Job` and `EmploymentType` (M2.4's slice, migration `20260821182202_add_job_tables`). Classification and saved-job tables do not exist yet — those start at M2.5, which also carries `Job`'s denormalized classification columns. |
 | Everything else | Not started |
 
 Two working-tree notes: `docs/DATABASE.md` is untracked and `docs/ARCHITECTURE.md`
@@ -173,20 +175,67 @@ Goal: the schema of `DATABASE.md` exists in PostgreSQL, reachable through Prisma
   until M2.4/M2.5.
 
 ### M2.3 — Source and ingestion tables
-- [ ] `JobSource`, `IngestionRun`, `RawJobDocument` (§3.2)
-- [ ] `RawJobDocument` keyed by content hash, so an unchanged re-fetch writes no row
+- [x] `JobSource`, `IngestionRun`, `RawJobDocument` (§3.2)
+- [x] `RawJobDocument` keyed by content hash, so an unchanged re-fetch writes no row
 - Verify: inserting the same payload twice produces one row.
+- Verified 2026-08-21: `prisma/schema.prisma` gained `JobSource`, `IngestionRun`,
+  `RawJobDocument` and the `AccessMethod` / `IngestionStatus` / `IngestionTrigger`
+  enums, field-for-field as `DATABASE.md` §3.2. Migration
+  `20260821180642_add_source_ingestion_tables` applied cleanly against Docker
+  Postgres; `prisma validate` passes and the client regenerates. Checked in the
+  database: inserting the same `(sourceId, externalId, contentHash)` twice leaves
+  **one** row (the second insert is a no-op under `ON CONFLICT DO NOTHING`, and a
+  plain re-insert is rejected by `RawJobDocument_sourceId_externalId_contentHash_key`),
+  while a changed payload — same item, new hash — does write a second row. Deleting
+  an `IngestionRun` nulls `RawJobDocument.ingestionRunId` and keeps the document
+  (`onDelete: SetNull`); deleting a `JobSource` that still has documents is refused
+  (RESTRICT). All §7 index-inventory entries for these three tables exist. Backend
+  `npm test` passes (8 suites / 40 tests) and `npm run build` succeeds.
+  `JobSource.postings` is intentionally deferred — `JobPosting` does not exist until
+  M2.4. No ingestion service was written; that is Phase 5. No `pg_trgm` or search
+  index work; that is M2.6.
+- ~~Known unrelated failure~~ — **resolved 2026-08-21** at the start of M2.4. The stale
+  `test/app.e2e-spec.ts` assertion now expects `{ status: 'ok', database: 'ok' }`, matching
+  what `HealthService` has returned since M2.1. `npm run test:e2e` passes (2 suites / 18 tests).
 
 ### M2.4 — Job tables
-- [ ] `JobPosting` and `Job` with structured salary fields (§3.3, §3.4)
-- [ ] `@@unique([sourceId, externalId])` on `JobPosting`
-- [ ] `Job.dedupHash` UNIQUE; `Job.mergedIntoJobId` self-relation
-- [ ] Non-null `language`; `technologies` as `String[]`
+- [x] `JobPosting` and `Job` per §3.3 — **no salary columns** (D7, §3.4)
+- [x] `@@unique([sourceId, externalId])` on `JobPosting`
+- [x] `Job.dedupHash` UNIQUE; `Job.mergedIntoJobId` self-relation
+- [x] Non-null `language`; `technologies` as `String[]`
 - Verify: a second `Job` with the same `dedupHash` is rejected by the database.
+- Verified 2026-08-21: `prisma/schema.prisma` gained `JobPosting`, `Job` and the
+  `EmploymentType` enum, field-for-field as `DATABASE.md` §3.3. Migration
+  `20260821182202_add_job_tables` applied cleanly against Docker Postgres;
+  `prisma validate` passes and the client regenerates. Checked in the database:
+  a second `Job` with the same `dedupHash` is **rejected** by `Job_dedupHash_key`
+  (D1) while a different hash is accepted; re-inserting the same
+  `(sourceId, externalId)` is rejected by `JobPosting_sourceId_externalId_key`
+  (dedup tier 1); a posting inserts fine with `jobId` NULL, the pre-dedup state;
+  setting `mergedIntoJobId` on one `Job` to point at another works (D2); deleting a
+  `Job` nulls `JobPosting.jobId` and keeps the posting (`onDelete: SetNull`);
+  deleting a `JobSource` that still has postings is refused (RESTRICT).
+  `information_schema` confirms **no column matching `%salar%`** on either table
+  (D7, §3.4). All §7 index-inventory entries for these two tables that Prisma can
+  express exist. `JobSource.postings` is no longer deferred. Backend `npm test`
+  passes (8 suites / 40 tests), `npm run test:e2e` passes (2 suites / 18 tests),
+  `npm run build` and `eslint` are clean.
+- Deferred by decision, not oversight: §3.3 also lists `Job`'s denormalized
+  classification block (`juniorLevel`, `juniorScore`, `requiredMinYears`,
+  `requiredMaxYears`, `classifiedAt`) plus the `JuniorLevel` enum and the two `Job`
+  indexes leading with those columns — but M2.5's checklist explicitly claims the
+  same four fields. That overlap was raised and resolved in favour of M2.5, which
+  adds them alongside the `JobClassification` rows that populate them. `Job.postings`
+  and `Job.mergedInto`/`mergedFrom` exist now; `Job.classifications` and `Job.savedBy`
+  wait for M2.5. No `searchVector`, GIN, trigram, partial or CHECK work — that is M2.6.
 
 ### M2.5 — Classification and saved-job tables
 - [ ] `JobClassification`, `SavedJob`, and the enums of §3.6
-- [ ] Denormalized `juniorLevel`, `juniorScore`, `requiredMinYears`, `requiredMaxYears` on `Job`
+- [ ] Denormalized `juniorLevel`, `juniorScore`, `requiredMinYears`, `requiredMaxYears`,
+      `classifiedAt` on `Job`, plus the `JuniorLevel` enum and the two `Job` indexes that
+      lead with those columns (`@@index([juniorLevel, effectivePostedAt(sort: Desc)])`,
+      `@@index([juniorScore(sort: Desc), effectivePostedAt(sort: Desc)])`) — §3.3 lists
+      them on `Job`, but they belong here, with the classification that populates them
 - [ ] Partial unique index: exactly one `isCurrent` classification per job
 - Verify: inserting a second `isCurrent = true` row for one job fails.
 
@@ -298,31 +347,63 @@ Goal: the read side serves jobs from the database, before any ingestion exists.
 Goal: an orchestrated pipeline that runs end to end against fixtures, with no
 source-specific knowledge outside `sources/`.
 
+**Architecture decisions — approved 2026-08-21.** The adapter design was reviewed
+and accepted before implementation; these are binding on Phase 5 and recorded in
+`ARCHITECTURE.md` §6.1.
+
+| # | Decision | Resolution |
+| - | -------- | ---------- |
+| A1 | Adapter return type | **`AsyncIterable<RawJob>`**, not `Promise<RawJob[]>`. The orchestrator owns pagination, backpressure, and early termination; adapters implement one page. `ARCHITECTURE.md` §6.1 amended accordingly. |
+| A2 | Compliance metadata | A validated **`SourceDescriptor`** on every adapter — the machine-readable twin of the §7.3 header comment. Registration **refuses to boot** on a missing `accessMethod`, `termsUrl`, or `complianceNote`. |
+| A3 | Descriptor vs. database authority | **Code wins** for compliance fields, synced one-directionally into `JobSource`. The database owns only `enabled`, so a source can be stopped without a deploy. |
+| A4 | Source review record | **`docs/SOURCES.md`** — one auditable entry per reviewed source, including sources reviewed and **rejected**, per `ARCHITECTURE.md` §7.5. |
+| A5 | Stale-run reaper | Owned by **M5.3**, not M5.6. The `RUNNING` concurrency guard depends on it, so they ship together. |
+| A6 | Fixture adapter in production | **Ships in all builds.** It makes a production smoke test possible without touching a real source. |
+| A7 | HTTP client | Node 24 global `fetch` + `AbortSignal.timeout`. No `axios`, no `@nestjs/axios`. |
+
+**Still open:** which queries ingestion runs (`ARCHITECTURE.md` §14.5). `SourceFetchParams`
+carries `query`/`location` but nothing specifies who supplies them. This blocks
+**M5.4 only** — M5.1–M5.3 proceed without it.
+
 ### M5.1 — Source adapter abstraction
-- [ ] `JobSourceAdapter` interface plus `RawJob` / `SourceFetchParams` types (§6.1)
+- [ ] `JobSourceAdapter` interface plus `RawJob` / `SourceFetchParams` /
+      `FetchContext` / `SourceDescriptor` types (§6.1, A1 + A2)
 - [ ] `SOURCE_ADAPTERS` injection token array
-- [ ] A `FixtureSourceAdapter` reading local JSON fixtures — the development source
+- [ ] `SourceRegistryService` — resolve by key, validate descriptors, reject duplicates
+- [ ] `PaginatedSourceAdapter` base driving `fetchPage` → `AsyncIterable<RawJob>`,
+      owning the page cap, cursor-progress check, and `since` early-stop
+- [ ] A `FixtureSourceAdapter` reading local JSON fixtures — the development source (A6)
+- [ ] Shared `describeAdapterContract` conformance suite every adapter must pass
 - [ ] Nothing outside `sources/` imports a concrete adapter or a source-specific field
 - Verify: a unit test resolves adapters through the token; an import check confirms
-  no domain module imports `sources/`.
+  no domain module imports `sources/` and no adapter imports an HTTP library.
 
 ### M5.2 — Compliance guardrails
 - [ ] Adapter header-comment requirement documented in `sources/README.md`
-- [ ] Shared HTTP client sending a truthful User-Agent with a contact address
-- [ ] Conservative client-side rate limiting and exponential backoff
+- [ ] `docs/SOURCES.md` review register established, with the §7.5 checklist (A4)
+- [ ] Shared HTTP client sending a truthful User-Agent with a contact address (A7)
+- [ ] Adapters cannot reach the network directly — client injection is the only path
+- [ ] Conservative per-source client-side rate limiting; retries only on `5xx`/network
 - [ ] `401`, `403`, `429` and block pages are stop conditions that end the run
+- [ ] Typed `SourceError` hierarchy: item-level failures degrade, run-level failures stop
 - Verify: a unit test shows a 429 ends the run and logs, with no retry storm.
 
 ### M5.3 — Raw persistence
 - [ ] `RawJobDocument` written with a content hash; an unchanged payload writes no row
+- [ ] Payload canonicalized before hashing — key sort plus `volatilePayloadPaths`
+      stripped — while the payload is still stored verbatim
 - [ ] `IngestionRun` records source, counts, status, and errors
+- [ ] Only `fetched` / `unchanged` / `failed` are populated at this stage; the other
+      counters stay `0` until the pipeline stages that own them exist
+- [ ] `RUNNING` concurrency guard plus the stale-run reaper (A5)
 - Verify: running the fixture source twice yields one run row per execution and no
-  duplicate raw documents.
+  duplicate raw documents; a payload differing only in a volatile field writes no row.
 
 ### M5.4 — Ingestion orchestration
 - [ ] `IngestionService` runs fetch → raw → normalize → dedupe → classify → score
 - [ ] One failing source never aborts another
 - [ ] Each stage is a service with typed input and output, unit-testable without a database
+- [ ] Blocked until the ingestion-plan question is resolved (`ARCHITECTURE.md` §14.5)
 - Verify: an integration test shows a deliberately failing adapter leaves the other
   source's run successful.
 
@@ -368,10 +449,11 @@ dictionaries only, no AI — this runs on every posting on every run.
 - [ ] Drives both the search configuration and the classifier pattern set
 - Verify: German fixtures detect `de`; unknown languages fall back to `en`.
 
-### M6.5 — Salary extraction
-- [ ] `salaryMin`, `salaryMax`, `salaryCurrency`, `salaryPeriod`, verbatim `salaryText`
-- [ ] Partial extraction is acceptable; stored and displayed, never filtered on
-- Verify: fixture tests over ranges, single values, and unparseable text.
+### M6.5 — Salary extraction — **REMOVED (D7)**
+Salary is excluded from the MVP schema (`DATABASE.md` §3.4), so there is no field to
+extract into and no normalization stage to build. Salary text stays inside
+`description`, unparsed. Recorded in Part II under Phase F6; note that it cannot be
+backfilled past the 90-day raw-document window.
 
 ---
 
@@ -478,7 +560,7 @@ Goal: `GET /jobs/search` answers "show me jobs I should realistically consider".
 - [ ] `technologies[]`, `locations[]`, `countryCode`, `workplaceType[]`,
       `employmentType[]`, `juniorLevel[]`, `minJuniorScore`, `maxYearsRequired`,
       `postedWithinDays`
-- [ ] Salary is not filterable in the MVP (D7)
+- [ ] No salary filter — salary is not in the MVP schema at all (D7)
 - Verify: integration tests per filter, plus a combined-filter case.
 
 ### M9.3 — Sorting and default result set
@@ -562,7 +644,7 @@ Goal: the product is usable in a browser.
 - Verify: reloading a filtered URL restores the same result set.
 
 ### M11.7 — Job detail page
-- [ ] Full description, salary display, metadata
+- [ ] Full description and metadata — no salary display (D7)
 - [ ] Classification explanation: level, score, positive signals, concerns
 - [ ] Links out to every original posting ("also listed on N sources")
 - Verify: a seeded job renders its evidence; the outbound link opens the source.
@@ -700,8 +782,10 @@ Goal: the product is deployed, observable, and honest about what it claims.
 - [ ] Extract `ingestion` into a queue-backed worker process
 - [ ] Swap PostgreSQL FTS for a search engine (confined to `search.repository.ts`)
 - [ ] Caching layer and read replicas
-- [ ] Salary filtering and comparison — only currency/period normalization and an
-      index are missing
+- [ ] Salary capture, display, and filtering (excluded from the MVP by D7) — columns,
+      a normalization stage, then currency/period comparison. Historically lossy:
+      postings older than the 90-day raw-document window cannot be backfilled
+- [ ] Company entities, job taxonomy, application tracking (also excluded by D7)
 - [ ] Mobile application
 
 Splitting the monolith waits for a specific measured pressure. The module

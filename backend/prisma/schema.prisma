@@ -5,14 +5,30 @@
 // is added table-by-table in later milestones, per CLAUDE.md's rule to build only
 // what a task asks for.
 //
-// This file currently holds the M2.2 slice (docs/DATABASE.md §3.1): User, Profile,
-// RefreshToken, and UserRole — the tables the M3 authentication module needs.
-// `Profile.workplaceTypes` uses WorkplaceType, defined here since it is otherwise
-// unused until profiles (M3.6) and job postings (M2.4) exist.
+// This file currently holds:
+//   - the M2.2 slice (docs/DATABASE.md §3.1): User, Profile, RefreshToken, UserRole —
+//     the tables the M3 authentication module needs. `Profile.workplaceTypes` uses
+//     WorkplaceType, defined here since it is otherwise unused until profiles (M3.6)
+//     and job postings (M2.4) exist.
+//   - the M2.3 slice (docs/DATABASE.md §3.2): JobSource, IngestionRun,
+//     RawJobDocument, and the AccessMethod / IngestionStatus / IngestionTrigger
+//     enums — the tables the Phase 5 ingestion pipeline writes into.
+//   - the M2.4 slice (docs/DATABASE.md §3.3): JobPosting and Job — levels 2 and 3
+//     of the three-level job model. EmploymentType is defined here because both
+//     need it. No salary columns: D7 removed them from the design (§3.4).
 //
-// `User.savedJobs` (docs/DATABASE.md §3.1) is intentionally omitted until the
-// `SavedJob`/`Job` models exist (M2.4/M2.5) — Prisma cannot reference a model that
-// isn't declared yet.
+// Deferred to M2.5, when JobClassification and SavedJob exist:
+//   - `User.savedJobs` (§3.1) and `Job.savedBy` / `Job.classifications` (§3.3) —
+//     Prisma cannot reference a model that isn't declared yet
+//   - the denormalized classification block on Job (`juniorLevel`, `juniorScore`,
+//     `requiredMinYears`, `requiredMaxYears`, `classifiedAt`) and the JuniorLevel
+//     enum, plus the two Job indexes that lead with those columns. §3.3 lists the
+//     block and M2.5 claims it; it lands with the classification that populates it.
+//
+// Deferred to M2.6, which adds the raw SQL Prisma cannot express (§5):
+//   - `Job.searchVector` (generated tsvector) and its GIN index
+//   - GIN indexes on `technologies`, the trigram index on `normalizedTitle`, the
+//     partial active-search index, and the §5 CHECK constraints
 
 generator client {
   provider = "prisma-client-js"
@@ -32,6 +48,33 @@ enum WorkplaceType {
   REMOTE
   ONSITE
   HYBRID
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  INTERNSHIP
+  CONTRACT
+  WORKING_STUDENT
+}
+
+enum AccessMethod {
+  PUBLIC_API
+  PARTNER_API
+  OFFICIAL_FEED
+  DATA_AGREEMENT
+  LICENSED_CONTENT
+}
+
+enum IngestionStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+enum IngestionTrigger {
+  SCHEDULED
+  MANUAL
 }
 
 model User {
@@ -73,4 +116,143 @@ model RefreshToken {
 
   @@index([userId, revokedAt])
   @@index([expiresAt])
+}
+
+// accessMethod / termsUrl / attributionText record how a source may be used, per
+// docs/ARCHITECTURE.md §7 — compliance stays auditable and the UI renders required
+// attribution from data instead of hard-coding it per source.
+model JobSource {
+  id              String       @id @default(uuid())
+  key             String       @unique // "example-source"
+  displayName     String
+  accessMethod    AccessMethod // compliance record, docs/ARCHITECTURE.md §7.1
+  termsUrl        String?
+  attributionText String? // rendered by the UI when set
+  enabled         Boolean      @default(true)
+  createdAt       DateTime     @default(now()) @db.Timestamptz(3)
+
+  postings      JobPosting[]
+  ingestionRuns IngestionRun[]
+  rawDocuments  RawJobDocument[]
+}
+
+model IngestionRun {
+  id           String           @id @default(uuid())
+  sourceId     String
+  trigger      IngestionTrigger @default(SCHEDULED)
+  status       IngestionStatus
+  startedAt    DateTime         @default(now()) @db.Timestamptz(3)
+  finishedAt   DateTime?        @db.Timestamptz(3)
+  fetched      Int              @default(0)
+  created      Int              @default(0)
+  updated      Int              @default(0)
+  unchanged    Int              @default(0)
+  duplicates   Int              @default(0)
+  failed       Int              @default(0)
+  errorMessage String?
+
+  source       JobSource        @relation(fields: [sourceId], references: [id])
+  rawDocuments RawJobDocument[]
+
+  @@index([sourceId, startedAt(sort: Desc)])
+  @@index([status, startedAt]) // find runs stuck in RUNNING
+}
+
+// contentHash is the change-detection key: re-fetching an unchanged listing writes
+// no row, keeping storage proportional to changes rather than to fetches.
+model RawJobDocument {
+  id             String   @id @default(uuid())
+  sourceId       String
+  ingestionRunId String?
+  externalId     String
+  contentHash    String // sha256 of canonicalized payload
+  payload        Json
+  fetchedAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  source       JobSource     @relation(fields: [sourceId], references: [id])
+  ingestionRun IngestionRun? @relation(fields: [ingestionRunId], references: [id], onDelete: SetNull)
+
+  @@unique([sourceId, externalId, contentHash]) // unchanged re-fetch ≠ new row
+  @@index([sourceId, externalId, fetchedAt(sort: Desc)])
+  @@index([fetchedAt]) // 90-day retention sweep
+}
+
+// Level 2 of the three-level job model (docs/ARCHITECTURE.md §5.1): one normalized
+// listing per source. Users never read this directly, except for the source URLs on
+// the job detail page. `jobId` stays null until dedup clusters the posting into a
+// canonical Job, so ingestion can write a posting before dedup has run.
+model JobPosting {
+  id             String          @id @default(uuid())
+  sourceId       String
+  externalId     String // id within that source
+  jobId          String? // canonical cluster; null until dedup
+  url            String
+  title          String
+  companyName    String
+  companySlug    String
+  location       String?
+  countryCode    String?         @db.Char(2)
+  workplaceType  WorkplaceType?
+  employmentType EmploymentType?
+  language       String          @default("en") @db.Char(2) // ISO 639-1 — D3, §5.1
+  description    String          @db.Text // normalized plain text
+  contentHash    String // skip re-classify when unchanged
+  technologies   String[]
+
+  // lastSeenAt is written explicitly by ingestion, never @updatedAt: an unrelated
+  // write must not make a stale posting look freshly observed (§3.3, §8).
+  postedAt    DateTime? @db.Timestamptz(3)
+  firstSeenAt DateTime  @default(now()) @db.Timestamptz(3)
+  lastSeenAt  DateTime  @default(now()) @db.Timestamptz(3)
+  isActive    Boolean   @default(true)
+
+  source JobSource @relation(fields: [sourceId], references: [id])
+  job    Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+
+  @@unique([sourceId, externalId]) // dedup tier 1, idempotent re-ingestion
+  @@index([jobId]) // job detail — "also listed on N sources"
+  @@index([companySlug]) // dedup tier 3 candidate lookup
+  @@index([sourceId, lastSeenAt]) // per-source staleness sweep
+}
+
+// Level 3: the canonical vacancy shown to users, clustering N postings. Salary is
+// absent by decision (D7, §3.4) — salary text stays unparsed inside `description`.
+model Job {
+  id              String          @id @default(uuid())
+  title           String
+  normalizedTitle String // dedup tier 3 input; trigram index comes in M2.6
+  companyName     String
+  companySlug     String // dedup partition key + filtering
+  location        String?
+  countryCode     String?         @db.Char(2)
+  workplaceType   WorkplaceType?
+  employmentType  EmploymentType?
+  language        String          @default("en") @db.Char(2)
+  description     String          @db.Text
+  technologies    String[]
+  dedupHash       String          @unique // D1 — exact-match clustering key
+  mergedIntoJobId String? // D2 — redirect after a merge
+
+  // effectivePostedAt is non-null (coalesce of postedAt and firstSeenAt) so sorting
+  // and pagination stay stable; postedAt is nullable because not every source
+  // publishes one. lastSeenAt is set by ingestion, not @updatedAt — see JobPosting.
+  postedAt          DateTime? @db.Timestamptz(3)
+  effectivePostedAt DateTime  @db.Timestamptz(3)
+  firstSeenAt       DateTime  @default(now()) @db.Timestamptz(3)
+  lastSeenAt        DateTime  @default(now()) @db.Timestamptz(3)
+  isActive          Boolean   @default(true)
+
+  // The denormalized classification block (juniorLevel, juniorScore,
+  // requiredMinYears, requiredMaxYears, classifiedAt) lands in M2.5 with
+  // JobClassification — see the file header.
+
+  // A merged-away Job keeps its id and gains a redirect, so SavedJob rows stay
+  // valid; search excludes it with `mergedIntoJobId IS NULL` (D2).
+  mergedInto Job?         @relation("JobMerge", fields: [mergedIntoJobId], references: [id])
+  mergedFrom Job[]        @relation("JobMerge")
+  postings   JobPosting[]
+
+  @@index([countryCode, workplaceType]) // location and workplace facet filtering
+  @@index([companySlug, normalizedTitle]) // dedup tier 3 candidate narrowing
+  @@index([lastSeenAt]) // staleness sweep
 }
