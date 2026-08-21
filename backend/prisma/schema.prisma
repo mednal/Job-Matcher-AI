@@ -262,6 +262,15 @@ model Job {
   requiredMaxYears Int?
   classifiedAt     DateTime?    @db.Timestamptz(3)
 
+  // Generated tsvector over title (weight A), companyName (B) and description
+  // (C), stemmed with the German configuration when language = 'de' and English
+  // otherwise (D3, docs/DATABASE.md §5.1). PostgreSQL maintains it; the
+  // application never writes it. Prisma cannot express a generated column, so it
+  // is raw SQL in M2.6's migration and is typed Unsupported here only so Prisma
+  // knows the column exists and does not drop it. Read it with $queryRaw, always
+  // under the same configuration the row was indexed with (§5).
+  searchVector Unsupported("tsvector")?
+
   // A merged-away Job keeps its id and gains a redirect, so SavedJob rows stay
   // valid; search excludes it with `mergedIntoJobId IS NULL` (D2).
   mergedInto      Job?                @relation("JobMerge", fields: [mergedIntoJobId], references: [id])
@@ -275,6 +284,16 @@ model Job {
   @@index([countryCode, workplaceType]) // location and workplace facet filtering
   @@index([companySlug, normalizedTitle]) // dedup tier 3 candidate narrowing
   @@index([lastSeenAt]) // staleness sweep
+
+  // The three GIN indexes and the partial active-search index are created by
+  // M2.6's raw SQL (docs/DATABASE.md §5, §7). They are declared here for the same
+  // reason `searchVector` is typed Unsupported: without a declaration Prisma treats
+  // them as drift and a later `migrate dev` emits DROP INDEX for all three. `map:`
+  // pins the names the migration already created, so this describes them rather
+  // than creating a second set.
+  @@index([searchVector(ops: raw("tsvector_ops"))], type: Gin, map: "Job_searchVector_idx")
+  @@index([technologies(ops: ArrayOps)], type: Gin, map: "Job_technologies_idx")
+  @@index([normalizedTitle(ops: raw("gin_trgm_ops"))], type: Gin, map: "Job_normalizedTitle_trgm_idx")
 }
 
 // One classifier verdict for one job. Rows are never deleted: keeping every
