@@ -1,4 +1,4 @@
-import { foldToAscii } from './ascii-fold';
+import { foldToAscii } from '../../common/utils/ascii-fold';
 import { normalizePlainText } from './text-normalization';
 
 /**

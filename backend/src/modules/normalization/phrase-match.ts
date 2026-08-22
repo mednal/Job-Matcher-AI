@@ -1,4 +1,4 @@
-import { foldToAscii } from './ascii-fold';
+import { foldToAscii } from '../../common/utils/ascii-fold';
 
 /**
  * Phrase matching for the attribute detectors (M6.3, `ARCHITECTURE.md` §6.2).

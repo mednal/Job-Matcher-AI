@@ -1,5 +1,12 @@
 /**
- * ASCII folding for canonical values (M6.2, `DATABASE.md` §6).
+ * ASCII folding for canonical values (`DATABASE.md` §6).
+ *
+ * Lives in `common/utils` rather than in a pipeline module because two of them need
+ * it and `ARCHITECTURE.md` §4.3 forbids them importing each other: `normalization`
+ * folds `companySlug`, `location` and the phrase dictionaries (M6.2/M6.3), and
+ * `deduplication` folds `normalizedTitle` (M7.2). Both values are hashed into
+ * `dedupHash`, so they have to fold by exactly the same rules — a second copy of
+ * this table would be a silent way for them to drift apart.
  *
  * `companySlug` and `countryCode` are compared across sources, so the same company
  * written two ways has to fold to one value. Sources disagree about diacritics

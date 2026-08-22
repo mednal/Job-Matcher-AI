@@ -1,4 +1,4 @@
-import { foldToAscii } from './ascii-fold';
+import { foldToAscii } from '../../common/utils/ascii-fold';
 
 /**
  * Technology extraction (M6.3, `ARCHITECTURE.md` §6.2, `DATABASE.md` §5/§6).
