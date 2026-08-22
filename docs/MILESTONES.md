@@ -42,7 +42,7 @@ As of the last update to this file:
 | NestJS backend | Config, validation pipe, CORS, `/api/v1/health` (now `@Public()`), plus a working `AuthModule` and `UsersModule`: register, login, argon2id hashing, JWT access tokens, refresh-token rotation/revocation, logout, a global `JwtAuthGuard`, and `GET /users/me`. M3.5/M3.6 close Phase 3: a second global `RolesGuard` with a `@Roles()` decorator (metadata opt-in, role read from the database rather than the token so a demotion takes effect immediately) and a `ProfilesModule` serving `GET`/`PUT /profiles/me` (`PUT` replaces rather than merges; a user who has never saved one gets an empty profile, not a 404; ownership is structural because no route names a profile by id). **Phase 3 is complete.** No admin route exists yet to point `RolesGuard` at — the first is M5.5's ingestion trigger — so its e2e declares a test-only `@Roles(ADMIN)` controller, keeping D4's "no admin surface" intact. M4.1/M4.2 add `JobsModule`: `GET /jobs/:id` (detail with classification evidence, every source URL and its attribution, resolving `mergedIntoJobId` through a redirect) and `GET /jobs` (the `{ items, page, pageSize, total }` envelope, `pageSize` ≤ 50, inactive and merged jobs excluded), both public, plus the shared pagination DTOs in `common/dto/`. **Phase 4 is complete** — the read side serves the seeded jobs, so Phase 11 is unblocked. |
 | PostgreSQL / Prisma | Postgres 18 runs in Docker on host port 5433. `prisma/schema.prisma` now holds `User`, `Profile`, `RefreshToken`, `UserRole`, `WorkplaceType` (M2.2's slice, migration `20260821171157_add_user_auth_tables`) plus `JobSource`, `IngestionRun`, `RawJobDocument`, `AccessMethod`, `IngestionStatus`, `IngestionTrigger` (M2.3's slice, migration `20260821180642_add_source_ingestion_tables`) plus `JobPosting`, `Job` and `EmploymentType` (M2.4's slice, migration `20260821182202_add_job_tables`) plus `JobClassification`, `SavedJob`, `JuniorLevel` and `Job`'s denormalized classification block (M2.5's slice, migration `20260821184731_add_classification_saved_job_tables`, which also hand-writes the partial unique index enforcing one current classification per job). Every MVP table of `DATABASE.md` §3 now exists. M2.6's slice (migration `20260821190950_add_search_indexes_and_checks`, commit `f3cb483`) adds the raw SQL of §5: the `pg_trgm` extension, the generated `Job.searchVector` column, GIN indexes on `searchVector`, `technologies` and `normalizedTitle` (trigram), the partial `Job_active_search_idx`, and all four CHECK constraints — so §7's index inventory is 25/25 complete. The three GIN indexes are also declared in `schema.prisma` purely to stop Prisma proposing to drop them; see M2.6's fragile-point note before running `prisma migrate dev`. M2.7 closes Phase 2: `prisma/seed.ts` + `prisma/seed-data.ts`, run with `npm run db:seed`, write a demo user, a demo admin, two fixture sources and 10 fixture jobs with one classification each, idempotently. **Phase 2 is complete.** |
 | Development fixtures | Seeded (M2.7). 10 jobs covering all five `JuniorLevel` bands, English and German, the adversarial "Junior title / 5+ years body" case, a two-source job, an inactive job and a merged-away job. Hand-written, not classifier output — stamped `classifierVersion = "seed-fixture-1.0"`. This is the corpus Phases 6–8 should be checked against |
-| Normalization | **M6.1 implemented 2026-08-22**: `modules/normalization/` holds the text stage — `htmlToPlainText` (markup to plain text preserving paragraph and list breaks, non-prose elements dropped with their content, entities decoded last) and `normalizePlainText` (NFKC, invisible and control characters removed, whitespace and bullet markers folded, idempotent), behind an injectable `TextNormalizationService` with a three-pair fixture corpus. **M6.2 implemented 2026-08-22**: `company-slug.ts` (`toCompanySlug` — German-style ASCII folding so `Müller`/`Mueller`/`Muller` are one slug, joining punctuation deleted, trailing legal forms stripped repeatedly and only at the end, a name that is *only* a legal form kept intact), `location.ts` (`parseLocation` — free text into a display `location` plus an ISO alpha-2 `countryCode` from a curated English/German alias table, with **no city-to-country inference**, since `countryCode` feeds `dedupHash` and tier 3 covers the resulting split while nothing covers a false merge), the shared `ascii-fold.ts`, and `CompanyLocationService` — pinned by spec against both the fixture payloads and the seeded slugs. `NormalizationModule` is not imported by `AppModule` yet: `IngestionModule` takes it at M5.4. M6.3–M6.4 are not started |
+| Normalization | **M6.1 implemented 2026-08-22**: `modules/normalization/` holds the text stage — `htmlToPlainText` (markup to plain text preserving paragraph and list breaks, non-prose elements dropped with their content, entities decoded last) and `normalizePlainText` (NFKC, invisible and control characters removed, whitespace and bullet markers folded, idempotent), behind an injectable `TextNormalizationService` with a three-pair fixture corpus. **M6.2 implemented 2026-08-22**: `company-slug.ts` (`toCompanySlug` — German-style ASCII folding so `Müller`/`Mueller`/`Muller` are one slug, joining punctuation deleted, trailing legal forms stripped repeatedly and only at the end, a name that is *only* a legal form kept intact), `location.ts` (`parseLocation` — free text into a display `location` plus an ISO alpha-2 `countryCode` from a curated English/German alias table, with **no city-to-country inference**, since `countryCode` feeds `dedupHash` and tier 3 covers the resulting split while nothing covers a false merge), the shared `ascii-fold.ts`, and `CompanyLocationService` — pinned by spec against both the fixture payloads and the seeded slugs. **M6.3 implemented 2026-08-22**: `phrase-match.ts` (ASCII-folded, token-aligned phrase matching with a three-token negation window), `workplace-type.ts` (REMOTE/HYBRID/ONSITE in English and German, title and location consulted before the description, remote-plus-onsite evidence resolving to HYBRID), `employment-type.ts` (the five-member enum, narrower arrangement winning so a Werkstudent posting is not recorded as PART_TIME), `technologies.ts` (a curated closed dictionary with its own symbol-aware boundaries, so `c#`, `.net` and `node.js` survive matching that `java` inside `javascript` does not), and `JobAttributesService`. Both detectors accept a `declared` value the adapter layer has already mapped to the enum, which wins over the text; `null` stays a real answer for both columns. `NormalizationModule` is not imported by `AppModule` yet: `IngestionModule` takes it at M5.4. M6.4 is not started |
 | Ingestion configuration | `SOURCE_USER_AGENT_CONTACT` added to configuration, the Joi schema and `.env.example` (§7.3.2). `INGESTION_ENABLED` and `INGESTION_CRON` belong to M5.5 and are deliberately not added yet |
 | Everything else | Not started |
 
@@ -986,10 +986,73 @@ dictionaries only, no AI — this runs on every posting on every run.
   Prettier clean.
 
 ### M6.3 — Classification-relevant attributes
-- [ ] Workplace type detection (REMOTE / HYBRID / ONSITE)
-- [ ] Employment type detection, including internship and working-student
-- [ ] Technology extraction against a curated dictionary into `technologies[]`
+- [x] Workplace type detection (REMOTE / HYBRID / ONSITE)
+- [x] Employment type detection, including internship and working-student
+- [x] Technology extraction against a curated dictionary into `technologies[]`
 - Verify: fixture tests cover each enum value and a "no signal" default.
+
+**Two matchers, not one, and the reason is `c#`.** Workplace and employment type are
+prose problems: `phrase-match.ts` folds to ASCII and reduces everything that is not a
+letter or digit to a space, so "Full-time (m/w/d)" and "full time" are one string and
+phrase boundaries are plain spaces. Applying that to technology names would turn
+`c#`, `c++`, `.net` and `node.js` into `c`, `c`, `net` and `node js`, so
+`technologies.ts` keeps its own symbol-aware boundaries instead — `java` still does
+not match inside `javascript`, and `.net` matches at a sentence start but not inside
+`asp.net`.
+
+**Decisions worth recording, because each will look wrong in a spot check:**
+
+- **A structured value from the source wins over the text.** Both detectors take an
+  optional `declared` value that the adapter layer has already mapped to the enum;
+  text detection is the fallback for sources that publish nothing. The fixture
+  payloads carry `workplace` and `employmentType` fields whose values their prose
+  never states — fx-001 is HYBRID in a field and silent in its description — and
+  discarding the employer's own answer in favour of pattern matching would be
+  strictly worse. Passing an already-canonical enum keeps §4.2 intact: normalization
+  still knows nothing about any source's response format.
+- **Remote evidence plus onsite evidence is HYBRID, not REMOTE.** A posting
+  mentioning both is describing a split week even when it never says "hybrid". The
+  opposite reading is the damaging one: a candidate who filters for remote and finds
+  a job needing three office days has been told something false about where they must
+  live. A day count — "2 days per week in the office", "3 Tage vor Ort" — counts as
+  the same evidence.
+- **`null` is a real answer.** Both columns are nullable so that "not stated" is
+  distinguishable from ONSITE / FULL_TIME. Defaulting either one would be a guess
+  with a filter attached to it.
+- **The narrower employment arrangement wins**, in the order working student →
+  internship → contract → part time → full time. This is not arbitrary: a Werkstudent
+  posting almost always also says "Teilzeit" because that is what it legally is, and a
+  German internship posting says "Vollzeit" for the same reason. Resolving those ties
+  toward the broader type would erase the two arrangements that matter most to this
+  audience. Known cost: "Vollzeit oder Teilzeit" records as PART_TIME.
+- **Negation is checked within a three-token window.** "There is no remote work"
+  contains "remote"; "this is not an internship" contains "internship". Every
+  occurrence is tested, so a later unnegated mention still counts.
+- **The employment enum is not extended.** A German `Ausbildung` has no member and
+  detects as `null` rather than being forced into the nearest one (`DATABASE.md`
+  §3.6).
+- **The technology dictionary is curated and closed.** An open extractor that
+  promotes capitalized words produces "We", "Berlin" and "Agile" as permanent facet
+  values in a vocabulary nothing cleans up; a missing technology is a visible,
+  fixable gap, a junk slug is not. **C** and bare **Go** are deliberately absent —
+  neither can be matched without matching prose — so Go is recognized only through
+  `golang` and phrases like "Go developer".
+
+**One hazard found and fixed while writing the spec.** The dictionary first emitted
+`node-js`, but `prisma/seed-data.ts` already carries the hand-written slug `nodejs` on
+a seeded job. Two spellings of one technology do not collide loudly — they partition
+the facet, and the GIN containment filter can never bring the two halves back
+together. The dictionary now follows the name itself (`nodejs`, `nextjs`, `aspnet`
+stay one word; only genuinely multi-word names hyphenate), and `technologies.spec.ts`
+pins every seeded and profile slug against `TECHNOLOGY_SLUGS` so the next divergence
+fails a test instead of silently splitting a facet.
+
+**Known limitation, not worked around.** The title is classified before the
+description, which protects a posting whose title states its own type. A full-time
+posting with a silent title and a benefits paragraph mentioning that the company also
+takes interns still reads as an internship. Fixing it needs sentence structure, which
+normalization does not have and should not grow for this; `declared` is the cheaper
+answer wherever a source publishes one.
 
 ### M6.4 — Language detection
 - [ ] ISO 639-1 `language`, English and German recognized, English as the fallback

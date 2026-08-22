@@ -1,13 +1,14 @@
 import { Module } from '@nestjs/common';
 import { CompanyLocationService } from './company-location.service';
+import { JobAttributesService } from './job-attributes.service';
 import { TextNormalizationService } from './text-normalization.service';
 
 /**
  * The normalization stage (`ARCHITECTURE.md` §4.3, §6.2).
  *
- * M6.1 shipped the text stage; M6.2 adds company and location. The
- * classification-relevant attributes (M6.3) and language detection (M6.4) join
- * them here, and `IngestionModule` imports the finished module at M5.4 — which,
+ * M6.1 shipped the text stage, M6.2 company and location, M6.3 the
+ * classification-relevant attributes. Language detection (M6.4) joins them here,
+ * and `IngestionModule` imports the finished module at M5.4 — which,
  * per the sequencing decision in `MILESTONES.md`, runs after this phase precisely
  * so that there is a real stage to wire in rather than a stub.
  *
@@ -15,7 +16,15 @@ import { TextNormalizationService } from './text-normalization.service';
  * import `sources/` (§4.2).
  */
 @Module({
-  providers: [TextNormalizationService, CompanyLocationService],
-  exports: [TextNormalizationService, CompanyLocationService],
+  providers: [
+    TextNormalizationService,
+    CompanyLocationService,
+    JobAttributesService,
+  ],
+  exports: [
+    TextNormalizationService,
+    CompanyLocationService,
+    JobAttributesService,
+  ],
 })
 export class NormalizationModule {}
