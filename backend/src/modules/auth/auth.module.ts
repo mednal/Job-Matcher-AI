@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { PasswordHasherService } from './password-hasher.service';
 import { RefreshTokenService } from './refresh-token.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { RolesGuard } from './guards/roles.guard';
 import { UsersModule } from '../users/users.module';
 import { RootConfig } from '../../common/config/configuration';
 
@@ -33,6 +34,11 @@ import { RootConfig } from '../../common/config/configuration';
     // @Public() (docs/ARCHITECTURE.md §9). Registered here, next to the JwtModule
     // it depends on, rather than in AppModule.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // Order matters and is not cosmetic: global guards run in the order they are
+    // registered, and RolesGuard reads the `request.user` that JwtAuthGuard
+    // attaches. It must stay below JwtAuthGuard. It is a no-op on any route
+    // without @Roles() (docs/ARCHITECTURE.md §9).
+    { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })
 export class AuthModule {}

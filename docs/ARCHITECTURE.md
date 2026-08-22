@@ -319,6 +319,29 @@ reach is soft-deactivated. Full rules and cascade behaviour: `DATABASE.md` §8.
 others. Each stage is a service taking a typed input and returning a typed output,
 which makes every stage unit-testable with fixtures and no database.
 
+**The ingestion plan** answers what a background crawl searches for. Ingestion has
+no user request to take `query` and `location` from, so each run is driven by a
+curated list of `{ query, location }` **seeds** aimed at junior-relevant roles,
+declared in code under `ingestion/` in English and German (§5.4). A source whose
+API takes no query — a plain "recent postings" feed — declares a single empty seed
+and is walked once; a source that needs different seeds than the shared list
+overrides them on its `SourceDescriptor`. The seeds are product tuning, not
+compliance metadata, so they never gate boot the way A2's fields do.
+
+The orchestrator walks the seeds for one source in sequence, never in parallel:
+concurrency here would multiply the request rate the §7.3.3 limiter exists to hold
+down. Seeds overlap heavily by design — the same posting is returned by several
+queries — and that costs almost nothing, because the raw stage recognizes an
+unchanged payload by content hash and writes no row (M5.3).
+
+`since` is derived from the last **successful** run for that source —
+`startedAt` minus a small overlap window — so a posting published while the
+previous run was in flight is not skipped. A source with no successful run yet has
+no `since`: the first walk is a full one, bounded by the descriptor's page cap
+rather than by time. `limit` per seed comes from the same descriptor defaults
+(`pageSize × maxPages`), which keeps the request budget of a run a property of the
+source rather than of the plan.
+
 Scheduling uses `@nestjs/schedule` inside the API process, plus an HTTP trigger for
 manual runs during development, guarded by a role check against `User.role ==
 ADMIN` (§9). The role guards that one route; no administrative UI is part of the
@@ -878,13 +901,14 @@ it. The module boundaries above are the seams along which it would split.
 4. **Language detection library.** English and German support is settled (§5.4), but
    the detector that populates `language` is not chosen. Any library returning ISO
    639-1 codes fits.
-5. **Which queries ingestion runs.** `SourceFetchParams` carries `query` and
-   `location`, but ingestion is a background crawl with no user request to take them
-   from, and nothing yet specifies who supplies them. The proposal is a curated
-   per-source **ingestion plan** — a list of `{ query, location }` seeds aimed at
-   junior-relevant roles — with `since` derived from the last successful run's
-   `startedAt` minus a small overlap window. This blocks ingestion **orchestration**
-   (M5.4), not the adapter interface or the HTTP layer (M5.1–M5.3).
+
+**Resolved 2026-08-22.** *Which queries ingestion runs* — a curated per-source
+**ingestion plan** of `{ query, location }` seeds, declared in code, with `since`
+taken from the last successful run's `startedAt` minus an overlap window (§6). The
+proposal is accepted as written; the seeds are product tuning rather than
+compliance metadata, and a source that takes no query declares one empty seed. This
+**unblocks M5.4**, which is now sequenced after Phases 6–8 so that the stages it
+orchestrates exist before it wires them together.
 
 **Resolved.** *Multilingual descriptions* — the MVP supports **English and German
 from day one**, rather than restricting to English. This is settled in the data

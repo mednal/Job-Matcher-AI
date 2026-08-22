@@ -1,0 +1,105 @@
+{
+  "meta": {
+    "generatedAt": "2026-08-22T00:00:00.000Z",
+    "requestId": "fixture-request-0001",
+    "note": "Synthetic development data. Not derived from any real job source."
+  },
+  "jobs": [
+    {
+      "id": "fx-001",
+      "url": "https://fixtures.juniorjob.local/jobs/fx-001",
+      "title": "Junior Backend Developer (m/f/d)",
+      "company": "Nordwind Software GmbH",
+      "location": "Berlin, Germany",
+      "employmentType": "FULL_TIME",
+      "workplace": "HYBRID",
+      "postedAt": "2026-08-20T09:00:00.000Z",
+      "description": "We are looking for a Junior Backend Developer to join our platform team. This is an entry level position and recent graduates are welcome. 0-2 years of professional experience. Training provided. Stack: Java, Spring Boot, PostgreSQL.",
+      "fetchedAt": "2026-08-22T00:00:00.000Z"
+    },
+    {
+      "id": "fx-002",
+      "url": "https://fixtures.juniorjob.local/jobs/fx-002",
+      "title": "Graduate Software Engineer",
+      "company": "Helios Data Ltd",
+      "location": "Dublin, Ireland",
+      "employmentType": "FULL_TIME",
+      "workplace": "REMOTE",
+      "postedAt": "2026-08-19T11:30:00.000Z",
+      "description": "Graduate programme for career starters. No experience required beyond a degree or equivalent portfolio. Structured mentoring for the first 12 months. TypeScript, Node.js, PostgreSQL.",
+      "fetchedAt": "2026-08-22T00:00:00.000Z"
+    },
+    {
+      "id": "fx-003",
+      "url": "https://fixtures.juniorjob.local/jobs/fx-003",
+      "title": "Junior Java Developer",
+      "company": "Vantage Systems AG",
+      "location": "Zurich, Switzerland",
+      "employmentType": "FULL_TIME",
+      "workplace": "ONSITE",
+      "postedAt": "2026-08-18T08:15:00.000Z",
+      "description": "Junior Java Developer wanted. Requirements: at least 5 years of professional experience with Java in production, proven experience leading a team, and ownership of architectural decisions. You will mentor other engineers.",
+      "fetchedAt": "2026-08-22T00:00:00.000Z"
+    },
+    {
+      "id": "fx-004",
+      "url": "https://fixtures.juniorjob.local/jobs/fx-004",
+      "title": "Werkstudent Softwareentwicklung (m/w/d)",
+      "company": "Alpenblick Technik GmbH",
+      "location": "Munich, Germany",
+      "employmentType": "WORKING_STUDENT",
+      "workplace": "HYBRID",
+      "postedAt": "2026-08-17T14:45:00.000Z",
+      "description": "Wir suchen Berufseinsteiger und Studierende. Keine Berufserfahrung erforderlich. Einarbeitung wird gestellt. Technologien: Python, Django, PostgreSQL.",
+      "fetchedAt": "2026-08-22T00:00:00.000Z"
+    },
+    {
+      "id": "fx-005",
+      "url": "https://fixtures.juniorjob.local/jobs/fx-005",
+      "title": "Software Developer",
+      "company": "Meridian Labs Inc",
+      "location": "Remote, Germany",
+      "employmentType": "FULL_TIME",
+      "workplace": "REMOTE",
+      "postedAt": "2026-08-16T10:00:00.000Z",
+      "description": "Software Developer for our integrations team. You will work across our API surface. Familiarity with REST and relational databases expected. The posting does not state a required number of years.",
+      "fetchedAt": "2026-08-22T00:00:00.000Z"
+    },
+    {
+      "id": "fx-006",
+      "url": "https://fixtures.juniorjob.local/jobs/fx-006",
+      "title": "Senior Platform Engineer",
+      "company": "Kestrel Cloud BV",
+      "location": "Amsterdam, Netherlands",
+      "employmentType": "FULL_TIME",
+      "workplace": "HYBRID",
+      "postedAt": "2026-08-15T16:20:00.000Z",
+      "description": "Senior Platform Engineer. 8+ years of production experience required. You will lead the platform team, own the roadmap, and manage two direct reports.",
+      "fetchedAt": "2026-08-22T00:00:00.000Z"
+    },
+    {
+      "id": "fx-007",
+      "url": "https://fixtures.juniorjob.local/jobs/fx-007",
+      "title": "Praktikum Softwareentwicklung",
+      "company": "Rheintal Digital GmbH",
+      "location": "Cologne, Germany",
+      "employmentType": "INTERNSHIP",
+      "workplace": "ONSITE",
+      "postedAt": null,
+      "description": "Praktikum fuer Studierende der Informatik. 0 Jahre Berufserfahrung. Betreuung durch erfahrene Entwickler. Java, Spring.",
+      "fetchedAt": "2026-08-22T00:00:00.000Z"
+    },
+    {
+      "id": "fx-008",
+      "url": "https://fixtures.juniorjob.local/jobs/fx-008",
+      "title": "Entry Level Frontend Developer",
+      "company": "Lumen Interactive",
+      "location": "Lisbon, Portugal",
+      "employmentType": "FULL_TIME",
+      "workplace": "REMOTE",
+      "postedAt": "2026-08-14T07:05:00.000Z",
+      "description": "Entry level frontend role. 0-1 years experience. We provide a six week onboarding programme. Angular, TypeScript, RxJS.",
+      "fetchedAt": "2026-08-22T00:00:00.000Z"
+    }
+  ]
+}

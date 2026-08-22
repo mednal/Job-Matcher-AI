@@ -18,4 +18,9 @@ export const envValidationSchema = Joi.object({
   // jsonwebtoken/@nestjs/jwt duration strings, e.g. "15m", "30d".
   JWT_ACCESS_TTL: Joi.string().default('15m'),
   JWT_REFRESH_TTL: Joi.string().default('30d'),
+  // Goes into the User-Agent every source request sends (§7.3.2). A URL or a
+  // mailto: address — both are contactable; an opaque string is not.
+  SOURCE_USER_AGENT_CONTACT: Joi.string()
+    .uri({ scheme: ['https', 'mailto'] })
+    .default('https://github.com/mednal/Job-Matcher-AI'),
 });

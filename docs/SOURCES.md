@@ -60,6 +60,25 @@ search, and the entire frontend.
 Nothing in this repository — no example, fixture, comment, or test name — should be
 read as a decision that a particular source will be used.
 
+## Not a source: `fixture-board`
+
+`FixtureSourceAdapter` is registered in the application and writes a `JobSource` row
+with the key `fixture-board`. **It has no entry above and needs none**, because it is
+not a source: it reads synthetic JSON committed to this repository, makes no network
+call, and contacts no third party, so there are no terms to review and nothing to be
+permitted. It is recorded here only so that a `JobSource` row appearing in a database
+cannot be mistaken for evidence that some source cleared review.
+
+Two things keep the distinction visible: its `displayName` says *"development only"*
+and its `attributionText` says the data is synthetic. Per decision A6 it ships in all
+builds, so a production deployment can be smoke-tested end to end without touching
+anyone's API; `JobSource.enabled` is what stops it running where it should not.
+
+Its descriptor stamps `accessMethod: OFFICIAL_FEED` because the enum has no value
+meaning "local file" and deliberately never will — every value describes a permitted
+way of obtaining *someone else's* data, and adding a fixture value would create a
+category a real adapter could hide in.
+
 ## Entry template
 
 Copy this block per source. Keep rejected entries permanently; do not delete them.

@@ -1,0 +1,9 @@
+Junior Backend Developer
+
+Our stack: Node.js, PostgreSQL, Docker
+
+- Write and review code
+- Join an on-call rotation after 6 months
+- No prior professional experience required
+
+Contact: jobs@example.com
