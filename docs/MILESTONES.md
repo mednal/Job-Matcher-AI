@@ -42,7 +42,8 @@ As of the last update to this file:
 | NestJS backend | Config, validation pipe, CORS, `/api/v1/health` (now `@Public()`), plus a working `AuthModule` and `UsersModule`: register, login, argon2id hashing, JWT access tokens, refresh-token rotation/revocation, logout, a global `JwtAuthGuard`, and `GET /users/me`. M3.5/M3.6 close Phase 3: a second global `RolesGuard` with a `@Roles()` decorator (metadata opt-in, role read from the database rather than the token so a demotion takes effect immediately) and a `ProfilesModule` serving `GET`/`PUT /profiles/me` (`PUT` replaces rather than merges; a user who has never saved one gets an empty profile, not a 404; ownership is structural because no route names a profile by id). **Phase 3 is complete.** No admin route exists yet to point `RolesGuard` at — the first is M5.5's ingestion trigger — so its e2e declares a test-only `@Roles(ADMIN)` controller, keeping D4's "no admin surface" intact. M4.1/M4.2 add `JobsModule`: `GET /jobs/:id` (detail with classification evidence, every source URL and its attribution, resolving `mergedIntoJobId` through a redirect) and `GET /jobs` (the `{ items, page, pageSize, total }` envelope, `pageSize` ≤ 50, inactive and merged jobs excluded), both public, plus the shared pagination DTOs in `common/dto/`. **Phase 4 is complete** — the read side serves the seeded jobs, so Phase 11 is unblocked. |
 | PostgreSQL / Prisma | Postgres 18 runs in Docker on host port 5433. `prisma/schema.prisma` now holds `User`, `Profile`, `RefreshToken`, `UserRole`, `WorkplaceType` (M2.2's slice, migration `20260821171157_add_user_auth_tables`) plus `JobSource`, `IngestionRun`, `RawJobDocument`, `AccessMethod`, `IngestionStatus`, `IngestionTrigger` (M2.3's slice, migration `20260821180642_add_source_ingestion_tables`) plus `JobPosting`, `Job` and `EmploymentType` (M2.4's slice, migration `20260821182202_add_job_tables`) plus `JobClassification`, `SavedJob`, `JuniorLevel` and `Job`'s denormalized classification block (M2.5's slice, migration `20260821184731_add_classification_saved_job_tables`, which also hand-writes the partial unique index enforcing one current classification per job). Every MVP table of `DATABASE.md` §3 now exists. M2.6's slice (migration `20260821190950_add_search_indexes_and_checks`, commit `f3cb483`) adds the raw SQL of §5: the `pg_trgm` extension, the generated `Job.searchVector` column, GIN indexes on `searchVector`, `technologies` and `normalizedTitle` (trigram), the partial `Job_active_search_idx`, and all four CHECK constraints — so §7's index inventory is 25/25 complete. The three GIN indexes are also declared in `schema.prisma` purely to stop Prisma proposing to drop them; see M2.6's fragile-point note before running `prisma migrate dev`. M2.7 closes Phase 2: `prisma/seed.ts` + `prisma/seed-data.ts`, run with `npm run db:seed`, write a demo user, a demo admin, two fixture sources and 10 fixture jobs with one classification each, idempotently. **Phase 2 is complete.** |
 | Development fixtures | Seeded (M2.7). 10 jobs covering all five `JuniorLevel` bands, English and German, the adversarial "Junior title / 5+ years body" case, a two-source job, an inactive job and a merged-away job. Hand-written, not classifier output — stamped `classifierVersion = "seed-fixture-1.0"`. This is the corpus Phases 6–8 should be checked against |
-| Normalization | **M6.1 implemented 2026-08-22**: `modules/normalization/` holds the text stage — `htmlToPlainText` (markup to plain text preserving paragraph and list breaks, non-prose elements dropped with their content, entities decoded last) and `normalizePlainText` (NFKC, invisible and control characters removed, whitespace and bullet markers folded, idempotent), behind an injectable `TextNormalizationService` with a three-pair fixture corpus. **M6.2 implemented 2026-08-22**: `company-slug.ts` (`toCompanySlug` — German-style ASCII folding so `Müller`/`Mueller`/`Muller` are one slug, joining punctuation deleted, trailing legal forms stripped repeatedly and only at the end, a name that is *only* a legal form kept intact), `location.ts` (`parseLocation` — free text into a display `location` plus an ISO alpha-2 `countryCode` from a curated English/German alias table, with **no city-to-country inference**, since `countryCode` feeds `dedupHash` and tier 3 covers the resulting split while nothing covers a false merge), the shared `ascii-fold.ts`, and `CompanyLocationService` — pinned by spec against both the fixture payloads and the seeded slugs. **M6.3 implemented 2026-08-22**: `phrase-match.ts` (ASCII-folded, token-aligned phrase matching with a three-token negation window), `workplace-type.ts` (REMOTE/HYBRID/ONSITE in English and German, title and location consulted before the description, remote-plus-onsite evidence resolving to HYBRID), `employment-type.ts` (the five-member enum, narrower arrangement winning so a Werkstudent posting is not recorded as PART_TIME), `technologies.ts` (a curated closed dictionary with its own symbol-aware boundaries, so `c#`, `.net` and `node.js` survive matching that `java` inside `javascript` does not), and `JobAttributesService`. Both detectors accept a `declared` value the adapter layer has already mapped to the enum, which wins over the text; `null` stays a real answer for both columns. `NormalizationModule` is not imported by `AppModule` yet: `IngestionModule` takes it at M5.4. M6.4 is not started |
+| Normalization | **M6.1 implemented 2026-08-22**: `modules/normalization/` holds the text stage — `htmlToPlainText` (markup to plain text preserving paragraph and list breaks, non-prose elements dropped with their content, entities decoded last) and `normalizePlainText` (NFKC, invisible and control characters removed, whitespace and bullet markers folded, idempotent), behind an injectable `TextNormalizationService` with a three-pair fixture corpus. **M6.2 implemented 2026-08-22**: `company-slug.ts` (`toCompanySlug` — German-style ASCII folding so `Müller`/`Mueller`/`Muller` are one slug, joining punctuation deleted, trailing legal forms stripped repeatedly and only at the end, a name that is *only* a legal form kept intact), `location.ts` (`parseLocation` — free text into a display `location` plus an ISO alpha-2 `countryCode` from a curated English/German alias table, with **no city-to-country inference**, since `countryCode` feeds `dedupHash` and tier 3 covers the resulting split while nothing covers a false merge), the shared `ascii-fold.ts` (moved to `common/utils/` by M7.2, which needs the same folding and may not import this module), and `CompanyLocationService` — pinned by spec against both the fixture payloads and the seeded slugs. **M6.3 implemented 2026-08-22**: `phrase-match.ts` (ASCII-folded, token-aligned phrase matching with a three-token negation window), `workplace-type.ts` (REMOTE/HYBRID/ONSITE in English and German, title and location consulted before the description, remote-plus-onsite evidence resolving to HYBRID), `employment-type.ts` (the five-member enum, narrower arrangement winning so a Werkstudent posting is not recorded as PART_TIME), `technologies.ts` (a curated closed dictionary with its own symbol-aware boundaries, so `c#`, `.net` and `node.js` survive matching that `java` inside `javascript` does not), and `JobAttributesService`. Both detectors accept a `declared` value the adapter layer has already mapped to the enum, which wins over the text; `null` stays a real answer for both columns. **M6.4 implemented 2026-08-22**: `language.ts` (`detectLanguage` — stopword-frequency scoring over two deliberately disjoint English/German function-word sets, a supported `declared` code winning outright, English as the fallback for ties, unsupported codes and evidence-free input, and a floor of two German hits so one stray token cannot re-stem a description) plus `textSearchConfiguration`, which mirrors the `CASE` in the `searchVector` generated column by hand and is what M9.1 must build its `tsquery` through. Pinned against all ten seeded jobs and the three M6.1 HTML fixtures. **Phase 6 is complete.** `NormalizationModule` is still not imported by `AppModule`: `IngestionModule` takes it at M5.4 |
+| Deduplication | **M7.1 implemented 2026-08-22**: `modules/deduplication/` holds tier 1 — `PostingIdentityService.upsert` writes one `JobPosting` per `(sourceId, externalId)`, so re-ingestion updates in place. Returns `CREATED` / `UPDATED` / `UNCHANGED` for the run counters, where `UNCHANGED` means no column but `lastSeenAt` would change; `lastSeenAt` is stamped on every call because the M5.6 staleness sweep reads it, `firstSeenAt` never after the insert, and a re-listed posting is reactivated. `postingContentHash` hashes the **normalized** posting over every mutable column (not `RawJobDocument.contentHash`, which hashes the source payload). Tier 1 never assigns or clears `jobId` — that is M7.2/M7.3, and cluster membership must survive re-ingestion. A `P2002` insert race is resolved as a match by re-reading the winner. `DeduplicationModule` is imported by nothing yet: `IngestionModule` takes it at M5.4 alongside `NormalizationModule`. **M7.2 implemented 2026-08-22**: tier 2 — `normalized-title.ts` (`toNormalizedTitle` — ASCII-folded and lowercased, gender markers removed by a token rule so `(m/w/d)` and `(all genders)` go while `(Java)` stays, punctuation folded to word boundaries, and a deliberately **short** seniority list stripped; word order preserved, and a title that is only seniority words keeps them), `dedup-hash.ts` (`sha256(companySlug|normalizedTitle|countryCode)` in `prisma/seed.ts`'s exact format, pinned against all ten seeded jobs from their raw titles), and `CanonicalJobService.assign`, which attaches a posting to the `Job` carrying its hash — resolving `mergedIntoJobId` to the survivor first — or opens one, treating a `P2002` as a race and retrying it as a match (D1). A posting that is already clustered keeps its cluster; canonical field values are never rewritten on a match, since that is M7.4's. **Read M7.2's RECORDED HAZARD before extending the seniority list**: `dedupHash` is UNIQUE, so a stripped word makes two vacancies unrepresentable. **M7.3 implemented 2026-08-22**: tier 3 — `fuzzy-match.service.ts` (a `$queryRaw` trigram pass, `similarity("normalizedTitle", …) >= 0.75` scoped to one `companySlug`, candidates confirmed by `description-similarity.ts`, a token-set Jaccard at `>= 0.5`) behind the `FuzzyMatcher` seam in `assign`, with the new `FUZZY_MATCHED` outcome. It catches the same vacancy split by `countryCode` and title spelling drift; either gate failing, or a description too thin to carry evidence, opens a new `Job` instead. Both thresholds are still open question 2's conservative guess and M11 tunes them. This is the third place raw SQL is allowed (`DATABASE.md` §5), because Prisma cannot express `similarity()`. **M7.4 implemented 2026-08-22**, closing the phase: `canonical-values.ts` (the pure choice — longest description, ties broken on `firstSeenAt` then `id`, live postings over retired ones, so the answer cannot depend on the order a run fetched them in) behind `CanonicalValuesService.refresh`, which `CanonicalJobService` calls after every attach and on re-ingestion of a clustered posting but never after a create; `job-merge.service.ts` (`merge` — postings moved, the loser retained with `mergedIntoJobId`, existing tombstones re-pointed so chains stay one hop, both ids resolved through their chains first so it is idempotent and never self-redirects); and `merge-chain.ts`, the redirect walk now shared with tier 2 instead of copied. **The cluster's identity is frozen** — `dedupHash`, `normalizedTitle`, `companySlug`, `countryCode` — because `dedupHash` is UNIQUE and derived from three of them. Nothing calls `merge` automatically: it is a correction a human decides on, and D4 keeps the admin surface empty until M5.5. **Phase 7 is complete** |
 | Ingestion configuration | `SOURCE_USER_AGENT_CONTACT` added to configuration, the Joi schema and `.env.example` (§7.3.2). `INGESTION_ENABLED` and `INGESTION_CRON` belong to M5.5 and are deliberately not added yet |
 | Everything else | Not started |
 
@@ -933,7 +934,8 @@ dictionaries only, no AI — this runs on every posting on every run.
 - [x] Location parsing into `location` plus ISO `countryCode`
 - Verify: unit tests — "Example GmbH" and "Example Gmbh." produce one slug.
 - Verified 2026-08-22: `modules/normalization/` — `company-slug.ts`, `location.ts`,
-  the shared `ascii-fold.ts`, and `company-location.service.ts` behind
+  the shared `ascii-fold.ts` (moved to `common/utils/` by M7.2 — see its note), and
+  `company-location.service.ts` behind
   `NormalizationModule`. The verify case is asserted directly: `Example GmbH`,
   `Example Gmbh.` and `EXAMPLE gmbh` all slug to `example`. The
   classification-relevant attributes (M6.3) and language detection (M6.4) are not
@@ -1055,9 +1057,48 @@ normalization does not have and should not grow for this; `declared` is the chea
 answer wherever a source publishes one.
 
 ### M6.4 — Language detection
-- [ ] ISO 639-1 `language`, English and German recognized, English as the fallback
-- [ ] Drives both the search configuration and the classifier pattern set
+- [x] ISO 639-1 `language`, English and German recognized, English as the fallback
+- [x] Drives both the search configuration and the classifier pattern set
 - Verify: German fixtures detect `de`; unknown languages fall back to `en`.
+
+**Stopword frequency, not a library.** Two languages with disjoint function words is
+the case where counting works: function words are the highest-frequency tokens in any
+prose, and they are unaffected by the English technology names that fill German
+postings — "Du entwickelst Features in TypeScript mit Angular" is unambiguously German
+on `du`/`in`(excluded)/`mit`, while every content word in it is English. A dependency
+would buy accuracy on languages this system has no text-search configuration for.
+
+**Decisions worth recording:**
+
+- **The two stopword sets are disjoint, and a test enforces it.** `in`, `an`, `am`,
+  `so`, `man`, `war`, `will`, `hat` and `die` are all frequent German words and all
+  deliberately absent, because a token both languages use is evidence for neither. The
+  scoring counts German first, so a shared token would have silently biased every
+  comparison toward `de`.
+- **A tie is the fallback, not a coin flip.** English wins ties because the English
+  stemmer is the safer wrong answer — it stems less aggressively than the German one,
+  so a misfiled posting loses recall rather than gaining false matches.
+- **German must also clear a floor of two hits.** A single "der" inside an English
+  quotation must not re-stem a whole description; two is the smallest count that
+  cannot come from one token, and real German prose clears it in three words.
+- **`declared` wins only when it is `en` or `de`.** A posting declaring `fr` still has
+  to be stored as one of the two configurations that exist, and its own text is better
+  evidence for which than a code naming a third. `de-DE`, `de_AT` and `DE` all reduce
+  to `de`.
+- **This stage does not ASCII-fold**, unlike every other matcher in the module:
+  folding turns `für` into `fuer`, so both spellings are listed instead and umlauts
+  survive tokenization intact.
+
+**`textSearchConfiguration()` exists because the mirror is the fragile part.**
+`Job.searchVector` is a generated column whose `CASE` picks `german` or `english`
+(migration `20260821190950`). A query built with the other configuration matches almost
+nothing, and nothing errors. M9.1 must build its `tsquery` through this function, and
+its spec pins the mapping against the migration.
+
+**Known limitation, not worked around.** A title carries no function words — "Junior
+Softwareentwickler (m/w/d)" has none — so a title-only input falls back to `en`. The
+pipeline always has the description by this stage, and `declared` covers the sources
+that publish one.
 
 ### M6.5 — Salary extraction — **REMOVED (D7)**
 Salary is excluded from the MVP schema (`DATABASE.md` §3.4), so there is no field to
@@ -1072,27 +1113,337 @@ backfilled past the 90-day raw-document window.
 Goal: one canonical `Job` per real vacancy, biased toward false splits.
 
 ### M7.1 — Tier 1: source identity
-- [ ] Re-ingesting the same `(sourceId, externalId)` updates instead of inserting
+- [x] Re-ingesting the same `(sourceId, externalId)` updates instead of inserting
 - Verify: an integration test — two runs over identical fixtures leave one posting.
+- Verified 2026-08-22: `modules/deduplication/` — `posting-identity.service.ts`,
+  `posting-content-hash.ts`, `deduplication.tokens.ts`, `deduplication.module.ts`,
+  plus `test/deduplication.e2e-spec.ts` against the real database. The e2e drives the
+  **fixture adapter's own payloads** through `PostingIdentityService.upsert` twice:
+  8 `CREATED`, then 8 `UNCHANGED` with the same posting ids and 8 rows.
+
+**Tier 1 never touches `jobId`.** Clustering is M7.2/M7.3's job, and a posting that
+already belongs to a `Job` keeps that membership through every later run — otherwise
+re-ingestion would silently undo a merge, and tier 3 is biased toward splitting
+precisely because a merge is expensive to redo. A case pins it: a posting whose title
+changed completely comes back still attached to its job.
+
+**`JobPosting.contentHash` is not `RawJobDocument.contentHash`.** That one hashes the
+source payload (M5.3); this one hashes the *normalized* posting and answers a
+different question — "would writing this row change any column?". It therefore covers
+**every mutable column the upsert writes**, not only the fields the classifier reads.
+The schema calls the column "skip re-classify when unchanged", and a hash over the
+superset still answers that safely: it can re-classify a posting whose URL moved, but
+it can never skip one whose description did. The narrower hash fails the other way —
+a changed URL would hash equal and the stale value would never be corrected.
+
+**Decisions worth recording:**
+
+- **`lastSeenAt` is written on the `UNCHANGED` path too.** The staleness sweep (M5.6,
+  `DATABASE.md` §8) retires postings a source stopped listing. A posting that was
+  fetched again *has* been listed, whether or not its text moved, so leaving the
+  column stale would eventually retire every posting nobody edits — which is most of
+  them. `firstSeenAt` is never rewritten, and a create stamps both from one clock
+  reading so they are equal rather than microseconds apart.
+- **Re-listing reactivates.** If the row is `isActive = false` and the source sends it
+  again, it goes back to active and the outcome is `UPDATED` even when the text is
+  identical — a column changed, so `UNCHANGED` would be a lie to the counters.
+- **Fields are JSON-encoded before hashing, so `null` and `""` differ**, and joined
+  with NUL so content cannot shift across a field boundary (`title "a" + company
+  "b|c"` must not hash like `title "a|b" + company "c"`). `technologies` is sorted
+  into the hash as the set it is, while the column keeps the extractor's order.
+- **A `P2002` on insert is treated as a match, not an error** — the same rule M7.2
+  states for `dedupHash`. The winner's row is re-read rather than assumed, since its
+  values are what the update is applied on top of. If the conflicting row cannot then
+  be read back, that throws: it is not a race this method can resolve, and the
+  orchestrator's item-level handler should count it as a failure rather than have the
+  posting silently vanish.
+- **A blank `externalId` is rejected before any write.** It is the one input tier 1
+  cannot work around: every posting of the source would collapse onto a single row
+  through the very unique constraint this tier depends on.
+- **The module owns its own `DEDUP_CLOCK`.** Reusing `INGESTION_CLOCK` would point
+  `deduplication` at `ingestion` and reverse the §4.3 arrow.
+
+**Not wired into a pipeline yet.** `DeduplicationModule` is imported by nothing —
+`IngestionModule` takes it at M5.4, together with `NormalizationModule`, which is why
+the e2e maps fixture payloads to `NormalizedPosting` with a dumb local helper instead
+of calling the M6 services. What is under test here is identity, not normalization.
+- Checks after the change: backend `npm test` 37 suites / 471 tests and
+  `npm run test:e2e` 7 suites / 81 tests pass (from 35/434 and 6/74),
+  `npm run build` clean, `npm run lint` clean, Prettier-clean. The e2e scopes its
+  cleanup to the adapter's `fx-` ids and leaves the 11 seeded postings untouched
+  (confirmed in the database: 0 `fx-` rows before and after, 11 total, none
+  unclustered).
 
 ### M7.2 — Tier 2: canonical hash
-- [ ] `normalizedTitle`: lowercased, seniority words, `(m/f/d)` markers and punctuation removed
-- [ ] `dedupHash = sha256(companySlug | normalizedTitle | countryCode)`, stored alongside `normalizedTitle`
-- [ ] A UNIQUE violation is handled as a race and retried as a match, not an error
+- [x] `normalizedTitle`: lowercased, seniority words, `(m/f/d)` markers and punctuation removed
+- [x] `dedupHash = sha256(companySlug | normalizedTitle | countryCode)`, stored alongside `normalizedTitle`
+- [x] A UNIQUE violation is handled as a race and retried as a match, not an error
 - Verify: unit tests on hash inputs; a concurrency test exercises the retry path.
+- Verified 2026-08-22: `modules/deduplication/` — `normalized-title.ts`,
+  `dedup-hash.ts`, `canonical-job.service.ts` and their specs, plus
+  `test/deduplication-tier2.e2e-spec.ts` against the real database. Tier 2 is the
+  first tier that clusters: `CanonicalJobService.assign` computes the hash, attaches
+  the posting to the `Job` that carries it, and opens one when none does.
+  - **The hash format matches `prisma/seed.ts` byte for byte** — the literal `|`
+    separator, the empty string for a missing country. It was matched rather than
+    re-invented: the seeded jobs are the corpus Phases 6–8 are checked against, and
+    a different layout would mean an ingested posting quietly opened a second `Job`
+    beside its seeded twin instead of joining it. A spec asserts the agreement for
+    all ten seeded jobs, and a second one reaches each seeded hash **from the raw
+    title alone**, so `toNormalizedTitle` is pinned to the ten hand-written
+    `normalizedTitle` values as well.
+  - No NUL separator and no JSON encoding, unlike `postingContentHash`: the three
+    inputs come from restricted alphabets (`[a-z0-9-]`, `[a-z0-9 ]`, two letters),
+    so none of them can contain a `|` and shift content across a field boundary. A
+    case pins that reasoning so it fails if an input rule ever widens.
+  - **`countryCode` is uppercased and `null` collapses with `''`.** Both mean
+    "country unknown"; tier 3 is what separates two same-titled vacancies that
+    landed there from different countries.
+  - **A posting that already has a `jobId` keeps it**, even when its title now
+    hashes differently — the rule tier 1 states, for the reason tier 1 states it.
+    The outcome is `ALREADY_CLUSTERED`, and the job is still stamped `lastSeenAt`,
+    because the M5.6 sweep retires by that column and a job with a posting in this
+    run has been seen.
+  - **Tier 2 never rewrites a matched job's canonical values.** Choosing them from
+    the posting with the richest description is M7.4; writing them here would let
+    the last posting of a run silently win. Only `lastSeenAt` and `isActive` move.
+  - **A hash match resolves `mergedIntoJobId` before attaching**, so a posting joins
+    the survivor and not a tombstone — search excludes a merged row (D2), so
+    attaching there would hide the vacancy while leaving the posting technically
+    clustered. The walk mirrors `JobsService` but ends differently: the read side
+    404s on a broken chain, while ingestion holds a posting and must put it
+    somewhere, so it stops at the last readable row and logs.
+  - The `P2002` race is proven twice: in the unit spec against a mock, and in the
+    e2e against a **real UNIQUE index** with concurrent `assign` calls — two racing,
+    then a burst of eight. A mock can only show the branch is wired; it cannot show
+    the constraint fires. Both cases assert exactly one `Job` and every posting
+    attached to it.
+  - **`ascii-fold.ts` moved from `modules/normalization/` to `common/utils/`.**
+    `companySlug` and `normalizedTitle` are both hashed into `dedupHash`, so they
+    must fold by identical rules, but `ARCHITECTURE.md` §4.3 forbids `deduplication`
+    importing `normalization`. A second copy of the table would have been a silent
+    way for the two to drift apart. Four imports were updated; the function is
+    unchanged.
+  - `test/jest-e2e.json` gained `"testTimeout": 30000`. Adding an eighth
+    database-backed suite pushed cold-start `beforeAll` hooks past the 5 s default
+    under parallel workers — a flake introduced by this milestone, fixed rather than
+    left to timing.
+
+**RECORDED HAZARD — stripping seniority words can merge two real vacancies.**
+`dedupHash` is UNIQUE (D1), so once "Junior Java Developer" and "Senior Java
+Developer" at one company in one country both normalize to `java developer`, the
+schema *cannot* hold them as two canonical jobs: the second posting attaches to the
+first one's `Job`. For a product whose entire value is telling entry-level roles
+from experienced ones, that is the expensive direction of error — the one §6.3 says
+to avoid by preferring a false split.
+
+It is implemented as specified anyway, deliberately: the rule is written into
+`ARCHITECTURE.md` §6.3, `DATABASE.md` §6 and this milestone's own checklist, and the
+seeded corpus already encodes it (`Junior Backend Developer (Java)` is seeded as
+`backend developer java`, `Lead Platform Engineer` as `platform engineer`). An e2e
+case named `KNOWN HAZARD` pins the behaviour so it is visible rather than latent.
+Changing it is a product decision plus the recompute migration of `DATABASE.md` §6,
+not a detail to settle inside the implementation. The mitigation taken meanwhile is
+to keep the seniority list **short** — `junior/jr/jnr`, `senior/sr/snr`, `lead`,
+`principal`, `staff`, `leitende(r|s)` — and to leave out every word that names the
+role rather than its level: `graduate`, `werkstudent`, `praktikant`, `trainee`,
+`intern`, `head`, `manager`, and ladder numerals like `Engineer II`. Each word added
+is another pair of distinct vacancies the schema can no longer represent.
+
+**Where tier 3 attaches.** M7.3 slots between the failed hash lookup and the create
+in `assign`, at a marked seam: an unmatched posting gets one trigram pass within its
+`companySlug` before a new `Job` is opened. It was left absent rather than stubbed,
+and M7.3 has since filled it behind the `FuzzyMatcher` interface.
+- Checks after the change: backend `npm test` 40 suites / 547 tests and
+  `npm run test:e2e` 8 suites / 90 tests pass (from 37/471 and 7/81),
+  `npm run build` clean, `npm run lint` clean, Prettier-clean. The e2e scopes its
+  cleanup to `t2-` external ids and the `tier2-` company slug; the database after
+  the run holds the 10 seeded jobs and 11 seeded postings, 0 of either prefix, and
+  no unclustered posting.
 
 ### M7.3 — Tier 3: fuzzy match
-- [ ] `pg_trgm` title similarity, scoped to one `companySlug`
-- [ ] Confirmed by a description similarity check
-- [ ] Below the threshold creates a new `Job` — a false split beats a false merge
+- [x] `pg_trgm` title similarity, scoped to one `companySlug`
+- [x] Confirmed by a description similarity check
+- [x] Below the threshold creates a new `Job` — a false split beats a false merge
 - Verify: an integration test — near-identical titles merge, genuinely different
   roles at one company stay separate.
+- Verified 2026-08-22: `modules/deduplication/` — `fuzzy-match.service.ts`,
+  `description-similarity.ts` and their specs, plus
+  `test/deduplication-tier3.e2e-spec.ts` against the real database. Tier 3 fills
+  the seam M7.2 left in `CanonicalJobService.assign`: a posting no `dedupHash`
+  matched gets one trigram pass inside its `companySlug`, and the new outcome is
+  `FUZZY_MATCHED`.
+  - **Two gates, both of which must pass.** `similarity("normalizedTitle", …) >=
+    0.75` inside one `companySlug` picks candidates; a **description** check
+    confirms one. Either gate failing means a new `Job` — the split-biased default
+    of §6.3, and the reason the confirmation exists at all: within one company a
+    handful of genuinely different vacancies share almost every title word, and
+    `normalizedTitle` has already had the seniority words removed.
+  - **What tier 3 actually catches**, in the order it will fire: the same vacancy
+    listed with a country on one board and without one on another — `countryCode`
+    is a `dedupHash` input and M6.2 refuses to infer a country from a city, so
+    byte-identical titles hash differently — and spelling drift in the title
+    (`Front End Developer` against `Frontend Developer`). Both are e2e cases.
+  - **The description check is a token-set Jaccard, not a trigram similarity.**
+    Descriptions are long, so `similarity()` over two of them is expensive and is
+    dominated by shared boilerplate character sequences rather than shared
+    vocabulary; two listings of one vacancy are usually the same copy with a
+    different wrapper, which set overlap reads well. Being pure and synchronous, it
+    is pinned by unit tests rather than only by the integration test. Jaccard
+    rather than the overlap coefficient (`shared / min(size)`) deliberately: the
+    overlap coefficient scores a short generic ad against a long one near 1,
+    because the short side is nearly a subset — exactly the false merge to avoid.
+  - **"Too thin to confirm" is a third answer, and it splits.** Below 12 distinct
+    tokens on either side, `descriptionSimilarity` returns `null` — unknown, not
+    `0` — and tier 3 declines the candidate. A handful of tokens can reach any
+    score by accident in either direction, and absence of evidence is not evidence
+    of a match. An e2e case pins it: two postings with identical titles *and*
+    identical two-line descriptions still become two jobs.
+  - **Thresholds: 0.75 on the title, 0.5 on the description.** Both are the
+    conservative first guess of `ARCHITECTURE.md` §14 open question 2 — still open,
+    and M11 tunes them against ingested postings. 0.75 is far above `pg_trgm`'s own
+    0.3 default; it admits `front end developer` ~ `frontend developer` (≈0.77) and
+    rejects `software developer` ~ `software engineer` (≈0.37), which stay two
+    vacancies. 0.5 is a strong bar for a Jaccard over vocabularies, chosen because
+    two ads from one company always share their "about us" and benefits blocks; the
+    unit corpus measures a reposted vacancy at 0.78 and a different role at the same
+    company at 0.17. A unit case asserts both constants stay biased toward
+    splitting, so a tuning pass has to state its intent rather than drift downward.
+  - **Tier 3 does not memoize.** The matched `Job` keeps the `dedupHash` it was
+    created with — `dedupHash` is UNIQUE (D1) and a row can carry only one — so a
+    third posting spelled like the second comes back through tier 3 rather than
+    hitting tier 2's index. That is one indexed query per unmatched posting, and it
+    keeps the hash meaning exactly one thing. The e2e asserts the stored hash is
+    still the creator's.
+  - **Rows merged away are candidates like any other.** Tier 2's hash lookup finds
+    a tombstone and redirects to the survivor, so tier 3 excluding them would split
+    a posting off a cluster somebody deliberately merged. `attach` resolves the
+    chain, and an e2e case takes a fuzzy match through a tombstone to the survivor.
+  - **The `FuzzyMatcher` seam.** `CanonicalJobService` depends on the interface, not
+    the class, so `deduplication-tier2.e2e-spec.ts` can keep asserting tier 2 alone
+    by injecting a matcher that never matches. Without it, tier 3's thresholds would
+    silently decide what a tier-2 test means — and one tier-2 case does change under
+    the wired-up system: a same-titled vacancy in another country, which tier 2
+    splits and tier 3 re-joins. That case is now named "leaves … to tier 3" and its
+    counterpart is asserted in the tier-3 e2e.
+
+**A rule this milestone had to break: raw SQL outside migrations and search.**
+`similarity()` is a `pg_trgm` function and the Prisma query API cannot express it,
+so the candidate query is a `$queryRaw`. `DATABASE.md` §5 and `ARCHITECTURE.md` §5.4
+both stated search was the only exception; both now name this third place and why.
+The query binds `companySlug`, the title and the threshold as parameters — nothing
+reaches the statement as text.
+
+**`Job_normalizedTitle_trgm_idx` is not what serves this query.** The `%` operator
+that would use the GIN index reads `pg_trgm.similarity_threshold`, a **session**
+GUC, and a pooled connection is the wrong place to keep a number that decides
+whether two vacancies merge; an explicit `similarity() >=` states it in the code
+instead. What makes the query affordable is the `companySlug` equality on
+`Job(companySlug, normalizedTitle)` — the similarity is then computed over one
+company's rows. At the seeded size Postgres seq-scans all 10 rows regardless
+(confirmed with `EXPLAIN ANALYZE`), which is correct at that size; the index
+inventory's "fuzzy title match" line in `DATABASE.md` §7 describes the trigram index
+optimistically and is left as written, since nothing about it is wrong for a future
+cross-company pass.
+
+**Still not wired into a pipeline.** `DeduplicationModule` remains imported by
+nothing; `IngestionModule` takes it at M5.4 and the M5.4 orchestrator is what will
+call tier 1 then `assign`.
+- Checks after the change: backend `npm test` 42 suites / 570 tests and
+  `npm run test:e2e` 9 suites / 98 tests pass (from 40/547 and 8/90),
+  `npm run build` clean, `npm run lint` clean, Prettier-clean on every file this
+  milestone touched. The e2e scopes its cleanup to `t3-` external ids and the
+  `tier3-` company slugs; the database after the run holds the 10 seeded jobs and
+  11 seeded postings, 0 of either prefix, and no unclustered posting.
 
 ### M7.4 — Merge and redirect
-- [ ] Canonical values taken from the posting with the richest description
-- [ ] Merging sets `mergedIntoJobId` on the loser; the row is retained
-- [ ] Search excludes merged jobs; a `SavedJob` pointing at one still resolves
+- [x] Canonical values taken from the posting with the richest description
+- [x] Merging sets `mergedIntoJobId` on the loser; the row is retained
+- [x] Search excludes merged jobs; a `SavedJob` pointing at one still resolves
 - Verify: an integration test — save a job, merge it, the saved job still loads.
+- Verified 2026-08-22: `modules/deduplication/` — `canonical-values.ts`,
+  `canonical-values.service.ts`, `job-merge.service.ts`, `merge-chain.ts` and their
+  specs, plus `test/deduplication-merge.e2e-spec.ts` against the real database. The
+  Verify line is one e2e case: a `SavedJob` is written against a job, the job is
+  merged away, the save is **not** rewritten, and `GET /jobs/:id` on the old id
+  returns the survivor with `redirectedFromJobId` set and both source listings
+  attached.
+  - **Two halves, deliberately separate classes.** `CanonicalValuesService.refresh`
+    decides which posting a cluster displays; `JobMergeService.merge` folds one
+    `Job` into another. Merge needs the refresh (the survivor just gained
+    postings), but the refresh has a life of its own — it runs on every attach —
+    so folding it into the merge would have left the ordinary ingestion path with
+    no owner for the question.
+  - **The seam M7.2 and M7.3 left is now filled.** `CanonicalJobService` takes a
+    `CanonicalValueWriter` and calls it after `attach` and after `touch`, never
+    after `create` (the job was just written from that posting and holds no other).
+    `ALREADY_CLUSTERED` refreshes too: tier 1 may have rewritten this posting's
+    description on the same run, and the incumbent copy can shrink.
+  - **"Richest" is a pure function of the rows, not of the run.** Longest
+    description first, then `firstSeenAt` ascending so the copy already on display
+    keeps winning a tie, then `id` — a total order, so two runs that attach the
+    same postings in different orders cannot disagree. Live postings beat retired
+    ones; when every posting is retired the whole pool is used again rather than
+    blanking a row a user may have saved.
+  - **The identity four are frozen: `dedupHash`, `normalizedTitle`, `companySlug`,
+    `countryCode`.** `dedupHash` is UNIQUE (D1) and derived from the other three,
+    so re-deriving it from a richer posting could produce a value another `Job`
+    already holds — unstorable — and would move the row tier 2 finds for the
+    original spelling. Two specs pin the written key set. The visible cost is that
+    a job opened from a posting with no country keeps `countryCode = null` after
+    one that names a country joins it; that direction only makes the country filter
+    miss the job, never file it under a country it is not in. `title` therefore
+    moves while `normalizedTitle` does not, and they can disagree: the stored
+    normalized title is tier 3's match key, not a view of the display title.
+  - **`effectivePostedAt` follows `postedAt` only when the chosen posting has one.**
+    Falling back to "now" would jump a job to the top of the recency sort because
+    its canonical copy changed, which is not new information (§3.3 wants that
+    column stable).
+  - **The merge writes are one transaction; the refresh after it is not.** A
+    half-applied merge would leave postings on a row search excludes and the vacancy
+    would vanish from the product entirely. The refresh is idempotent and derived
+    from rows every writer can see, so racing writers converge instead of corrupting
+    — a lock on the hottest row in ingestion would buy nothing.
+  - **What the loser keeps.** Its `dedupHash`, so a later posting of the losing
+    spelling is found by tier 2 and follows the redirect onto the survivor rather
+    than opening a third job (an e2e case). Its `JobClassification` rows, because
+    the partial unique index allows one current classification per job and moving
+    them would collide with the survivor's. Its `SavedJob` rows, untouched — that is
+    the entire point of D2.
+  - **Merging is idempotent and chain-aware.** Both ids are resolved through their
+    own merge chains first, so merging into a tombstone lands on the survivor;
+    equal ends make the call a no-op (`ALREADY_MERGED`) rather than a self-redirect,
+    which would hide a job from search permanently. Tombstones that already pointed
+    at the loser are re-pointed at the winner, so a chain stays one hop long instead
+    of growing toward `MAX_MERGE_HOPS`. A non-existent id throws: a merge names two
+    specific vacancies, and reporting success on a typo would leave the split in
+    place with nobody looking at it again.
+  - **`resolveCanonicalId` moved to `merge-chain.ts`.** Merge needs the identical
+    walk `CanonicalJobService` already had, and two copies of a loop that decides
+    where a posting ends up is exactly the kind of thing that drifts. `JobsService`
+    keeps its own on purpose: the read side 404s on a broken chain where the write
+    side must place the posting somewhere, and `jobs` may not import
+    `deduplication` under §4.3.
+  - **Nothing calls `merge` automatically.** It is a correction, not a stage: the
+    pipeline splits, a human decides two jobs are one. D4 keeps the admin surface
+    empty until M5.5, so this ships as a service method with tests and no route.
+
+**A note Phase 8 has to answer.** A refresh can change a job's canonical
+`description` — the text the classifier reads — without touching any
+`JobClassification` row, so `classifiedAt` can now be older than the description it
+supposedly explains. M8.4 owns the re-classification trigger and should key it on
+the canonical values moving, not only on `JobPosting.contentHash`.
+- Checks after the change: backend `npm test` 45 suites / 601 tests and
+  `npm run test:e2e` 10 suites / 109 tests pass (from 42/570 and 9/98),
+  `npm run build` clean, `npm run lint` clean, Prettier-clean on every file this
+  milestone touched. The e2e scopes its cleanup to `t4-` external ids, the
+  `tier4-` company slug and its own `@merge-e2e.invalid` user; the database after
+  the run holds the 10 seeded jobs, 11 seeded postings and 2 seeded saved jobs,
+  0 rows of either prefix, no test user, and no unclustered posting.
+
+**Phase 7 is complete.** Tiers 1–3 cluster and M7.4 corrects; `DeduplicationModule`
+is still imported by nothing — `IngestionModule` takes it at M5.4, which is the
+milestone that finally calls tier 1 then `assign` in sequence.
 
 ---
 

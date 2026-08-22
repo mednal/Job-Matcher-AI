@@ -287,8 +287,9 @@ posting with the English configuration silently drops results through stemming
 mismatches rather than failing loudly. Both sides derive it from `Job.language`.
 The exact SQL is in `DATABASE.md` §5.
 
-This is the one place raw SQL is acceptable, and it stays confined to
-`search/search.repository.ts`.
+This is one of the two places raw SQL is acceptable, and it stays confined to
+`search/search.repository.ts`. The other is dedup tier 3's `similarity()` candidate
+query (§6.3), for the same reason: Prisma cannot express a `pg_trgm` function.
 
 ### 5.5 Retention
 
@@ -469,10 +470,22 @@ When postings merge into one `Job`, the canonical field values are taken from th
 posting with the richest description; every source URL stays reachable through the
 `postings` relation, so the UI can show "also listed on N sources".
 
+That choice is re-derived from the whole cluster whenever it gains or re-sees a
+posting, and it is a **pure function of the posting rows** — longest description
+first, ties broken down to a total order — so it cannot depend on the order a run
+happened to fetch them in. **The cluster's identity is frozen and does not
+participate**: `dedupHash`, `normalizedTitle`, `companySlug` and `countryCode` stay
+as the posting that opened the job wrote them. `dedupHash` is UNIQUE and derived
+from the other three, so recomputing it could collide with a hash another `Job`
+already holds, and would move the row tier 2 finds for the original spelling.
+
 Because tier 3 is biased toward splitting, false splits are expected and must stay
 correctable. Merging two existing `Job` rows sets `mergedIntoJobId` on the loser
 rather than deleting it, so search excludes it (`mergedIntoJobId IS NULL`) while any
-`SavedJob` pointing at it still resolves through the redirect.
+`SavedJob` pointing at it still resolves through the redirect. The loser's postings
+move to the survivor and the survivor's canonical values are re-derived over them;
+the loser keeps its `dedupHash`, which is what sends later postings of the losing
+spelling through the redirect instead of into a third `Job`.
 
 ### 6.4 Classification
 

@@ -300,7 +300,12 @@ Notes on specific fields:
 - **`mergedIntoJobId`** (D2): when two `Job` rows turn out to be the same vacancy,
   the loser keeps its id, gains a redirect, and is excluded from search by
   `mergedIntoJobId IS NULL`. Saved jobs pointing at it stay valid and resolve
-  through the redirect.
+  through the redirect. The loser also keeps its `dedupHash` and its
+  `JobClassification` rows: the hash still routes tier 2 to the tombstone, which
+  then redirects, and moving the classifications would collide with the survivor's
+  under the one-current-classification partial unique index (§5). Merging re-points
+  any tombstone that already pointed at the loser, so a redirect chain stays one
+  hop long however many merges accumulate.
 
 ### 3.4 Deliberately absent from the MVP schema (D7)
 
@@ -449,8 +454,11 @@ produced it.
 ## 5. Raw SQL in Migrations
 
 Prisma's schema language cannot express the following. These belong in the initial
-migration as raw SQL (`prisma migrate dev --create-only`, then hand-edited). This
-and `search/search.repository.ts` are the only places raw SQL is acceptable.
+migration as raw SQL (`prisma migrate dev --create-only`, then hand-edited). This,
+`search/search.repository.ts` and the trigram candidate query of deduplication tier
+3 (`deduplication/fuzzy-match.service.ts`, M7.3) are the only places raw SQL is
+acceptable — `similarity()` is a `pg_trgm` function and the Prisma query API cannot
+express it.
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
