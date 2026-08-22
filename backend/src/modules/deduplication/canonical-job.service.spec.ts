@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CanonicalJobService } from './canonical-job.service';
 import { dedupHash } from './dedup-hash';
+import type { FuzzyMatch } from './fuzzy-match.service';
 import { toNormalizedTitle } from './normalized-title';
 import type { NormalizedPosting } from './posting-identity.service';
 
@@ -50,6 +51,19 @@ function uniqueViolation(): Prisma.PrismaClientKnownRequestError {
 describe('CanonicalJobService', () => {
   let prisma: PrismaMock;
   let service: CanonicalJobService;
+  /**
+   * Tier 3 behind its seam. The default answers "no fuzzy candidate", so every
+   * case below stays a statement about tier 2; the tier-3 cases set a return value.
+   * The trigram query itself needs a real index — `test/deduplication-tier3.e2e-spec.ts`.
+   */
+  let fuzzy: { findMatch: jest.Mock };
+  /**
+   * M7.4 behind its seam. Choosing which posting a cluster displays reads the whole
+   * cluster back out of the database, so leaving it real here would turn every case
+   * below into a statement about the mock's `postings` array instead of about the
+   * tier. `test/deduplication-merge.e2e-spec.ts` is where the real one is proven.
+   */
+  let canonicalValues: { refresh: jest.Mock };
 
   /** jest types `mock.calls` as `any[][]`; narrow once, here. */
   const callArgs = (mock: jest.Mock, index = 0): Record<string, any> =>
@@ -80,9 +94,19 @@ describe('CanonicalJobService', () => {
       },
       jobPosting: { update: jest.fn().mockResolvedValue({}) },
     };
+    fuzzy = { findMatch: jest.fn().mockResolvedValue(null) };
+    canonicalValues = {
+      refresh: jest
+        .fn()
+        .mockImplementation((jobId: string) =>
+          Promise.resolve({ jobId, changed: false, sourcePostingId: null }),
+        ),
+    };
     service = new CanonicalJobService(
       prisma as unknown as PrismaService,
       () => NOW,
+      fuzzy,
+      canonicalValues,
     );
   });
 
@@ -115,6 +139,9 @@ describe('CanonicalJobService', () => {
       // One statement, so a job can never exist without the posting that opened it.
       expect(data.postings).toEqual({ connect: { id: 'posting-1' } });
       expect(prisma.jobPosting.update).not.toHaveBeenCalled();
+      // No refresh on this path: the job was written from this posting and holds
+      // no other, so re-deriving the block could only produce what it just wrote.
+      expect(canonicalValues.refresh).not.toHaveBeenCalled();
     });
 
     it('leaves the classification block empty for Phase 8', async () => {
@@ -183,7 +210,7 @@ describe('CanonicalJobService', () => {
       });
     });
 
-    it('never rewrites the matched job canonical values', async () => {
+    it('writes only the seen-at stamp, and delegates the canonical values', async () => {
       const posting = normalized({ description: 'A much richer description.' });
       const hash = dedupHash({
         companySlug: posting.companySlug,
@@ -194,12 +221,14 @@ describe('CanonicalJobService', () => {
 
       await service.assign(posting, { postingId: 'posting-2', jobId: null });
 
-      // Choosing canonical values from the richest posting is M7.4. Writing them
-      // here would let the last posting of a run silently win.
+      // The tier itself never writes display values from the posting in hand — in
+      // its scope that is the only candidate, so the last posting of a run would
+      // silently win. M7.4 re-derives them from the whole cluster instead.
       expect(callArgs(prisma.job.update).data).toEqual({
         lastSeenAt: NOW,
         isActive: true,
       });
+      expect(canonicalValues.refresh).toHaveBeenCalledWith('job-1');
     });
 
     it('follows a merge redirect to the surviving job', async () => {
@@ -226,6 +255,9 @@ describe('CanonicalJobService', () => {
       expect(callArgs(prisma.jobPosting.update).data).toEqual({
         jobId: 'job-live',
       });
+      // And the survivor is what gets re-derived — refreshing the tombstone would
+      // rewrite a row nothing displays while leaving the visible one stale.
+      expect(canonicalValues.refresh).toHaveBeenCalledWith('job-live');
     });
 
     it('stops on a merge cycle instead of looping', async () => {
@@ -346,6 +378,119 @@ describe('CanonicalJobService', () => {
         where: { id: 'job-1' },
         data: { lastSeenAt: NOW, isActive: true },
       });
+      // Refreshed even though the posting did not move: tier 1 may have rewritten
+      // this posting's description on this run, which can change which posting the
+      // cluster should display (M7.4).
+      expect(canonicalValues.refresh).toHaveBeenCalledWith('job-1');
+    });
+  });
+
+  /**
+   * The tier-3 seam (M7.3). Tier 3 runs only where tier 2 failed, and only ever
+   * turns a create into a match — never the other way round.
+   */
+  describe('the tier 3 seam', () => {
+    const match: FuzzyMatch = {
+      jobId: 'job-fuzzy',
+      titleSimilarity: 0.82,
+      descriptionSimilarity: 0.71,
+    };
+
+    it('attaches the posting to the fuzzy match instead of opening a job', async () => {
+      fuzzy.findMatch.mockResolvedValue(match);
+      jobRows([{ id: 'job-fuzzy', dedupHash: 'other-hash' }]);
+
+      const result = await service.assign(normalized(), {
+        postingId: 'posting-1',
+        jobId: null,
+      });
+
+      expect(result.outcome).toBe('FUZZY_MATCHED');
+      expect(result.jobId).toBe('job-fuzzy');
+      expect(prisma.job.create).not.toHaveBeenCalled();
+      expect(prisma.jobPosting.update).toHaveBeenCalledWith({
+        where: { id: 'posting-1' },
+        data: { jobId: 'job-fuzzy' },
+      });
+      // Same rule as a hash match: only the seen-at stamp moves. Canonical values
+      // are M7.4's to choose.
+      expect(callArgs(prisma.job.update).data).toEqual({
+        lastSeenAt: NOW,
+        isActive: true,
+      });
+    });
+
+    it('is asked with the canonical title, not the raw one', async () => {
+      await service.assign(normalized(), {
+        postingId: 'posting-1',
+        jobId: null,
+      });
+
+      // "Junior Backend Developer (m/w/d)" — tier 3 matches on what tier 2 stored.
+      expect(fuzzy.findMatch).toHaveBeenCalledWith({
+        companySlug: 'nordwind-software',
+        normalizedTitle: 'backend developer',
+        description: 'Entry level position. Training provided.',
+      });
+    });
+
+    it('opens a job when nothing clears the thresholds', async () => {
+      fuzzy.findMatch.mockResolvedValue(null);
+
+      const result = await service.assign(normalized(), {
+        postingId: 'posting-1',
+        jobId: null,
+      });
+
+      // Below the threshold is a new `Job`: a false split is the cheaper error.
+      expect(result.outcome).toBe('CREATED');
+      expect(prisma.job.create).toHaveBeenCalled();
+    });
+
+    it('is not consulted when the hash already matched', async () => {
+      const hash = dedupHash({
+        companySlug: 'nordwind-software',
+        normalizedTitle: 'backend developer',
+        countryCode: 'DE',
+      });
+      jobRows([{ id: 'job-1', dedupHash: hash }]);
+
+      await service.assign(normalized(), {
+        postingId: 'posting-1',
+        jobId: null,
+      });
+
+      // Tier 3 is the expensive tier and the only one that can merge two real
+      // vacancies. It runs on the fall-through path only.
+      expect(fuzzy.findMatch).not.toHaveBeenCalled();
+    });
+
+    it('is not consulted for a posting that is already clustered', async () => {
+      jobRows([{ id: 'job-1', dedupHash: 'unrelated' }]);
+
+      await service.assign(normalized(), {
+        postingId: 'posting-1',
+        jobId: 'job-1',
+      });
+
+      expect(fuzzy.findMatch).not.toHaveBeenCalled();
+    });
+
+    it('follows a merge redirect out of a fuzzy match', async () => {
+      fuzzy.findMatch.mockResolvedValue({ ...match, jobId: 'job-tombstone' });
+      jobRows([
+        { id: 'job-tombstone', mergedIntoJobId: 'job-survivor' },
+        { id: 'job-survivor' },
+      ]);
+
+      const result = await service.assign(normalized(), {
+        postingId: 'posting-1',
+        jobId: null,
+      });
+
+      // A tombstone is a legitimate tier-3 candidate — it is evidence about the
+      // same vacancy — but the posting has to land on the survivor (D2).
+      expect(result.jobId).toBe('job-survivor');
     });
   });
 

@@ -1,34 +1,40 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import {
+  CanonicalValuesService,
+  type CanonicalValueWriter,
+} from './canonical-values.service';
 import { dedupHash } from './dedup-hash';
 import { DEDUP_CLOCK } from './deduplication.tokens';
+import { FuzzyMatchService, type FuzzyMatcher } from './fuzzy-match.service';
+import { resolveCanonicalId } from './merge-chain';
 import { toNormalizedTitle } from './normalized-title';
 import type { NormalizedPosting } from './posting-identity.service';
 
 /**
- * M7.2 — deduplication tier 2: the canonical hash (`ARCHITECTURE.md` §6.3).
+ * M7.2/M7.3 — the clustering tiers (`ARCHITECTURE.md` §6.3).
  *
- * Tier 1 made a posting stable; tier 2 is the first tier that clusters, attaching a
- * posting to the canonical `Job` that represents the vacancy. It matches on an
- * exact `dedupHash` — the cheap, certain case — and creates the `Job` when nothing
- * matches.
+ * Tier 1 made a posting stable; this service is what attaches it to the canonical
+ * `Job` that represents the vacancy, cheapest evidence first:
  *
- * **Where tier 3 will slot in.** M7.3's fuzzy match belongs between the failed hash
- * lookup and the create in `assign` below: an unmatched posting gets one trigram
- * pass within its `companySlug` before a new `Job` is opened. The seam is marked in
- * the code. Tier 3 is deliberately absent here rather than stubbed.
+ * 1. an exact `dedupHash` match — the cheap, certain case (tier 2, M7.2);
+ * 2. failing that, one `FuzzyMatcher` pass inside the posting's `companySlug`
+ *    (tier 3, M7.3, which owns both thresholds);
+ * 3. failing that, a new `Job`, because a false split is the cheaper error.
  *
- * **What tier 2 does not do.** It never rewrites a matched `Job`'s canonical field
- * values. Choosing those from the posting with the richest description is M7.4, and
- * guessing at it now would mean the last posting of a run silently won.
+ * **What neither tier decides.** Neither one chooses the matched `Job`'s displayed
+ * values from the posting in hand — inside a tier that is the only candidate in
+ * scope, so the last posting of a run would silently win. Once a posting is
+ * attached, M7.4's `CanonicalValuesService` re-derives the block from the whole
+ * cluster.
  */
 
-const MAX_MERGE_HOPS = 10;
-
 export type ClusterOutcome =
-  /** An existing `Job` had this `dedupHash`; the posting joined it. */
+  /** An existing `Job` had this `dedupHash`; the posting joined it (tier 2). */
   | 'MATCHED'
+  /** No hash matched, but a title and description at this company did (tier 3). */
+  | 'FUZZY_MATCHED'
   /** No `Job` had this hash, so one was opened from this posting. */
   | 'CREATED'
   /** The posting already belonged to a cluster; membership was left alone. */
@@ -58,6 +64,10 @@ export class CanonicalJobService {
     @Optional()
     @Inject(DEDUP_CLOCK)
     private readonly now: () => Date = () => new Date(),
+    @Inject(FuzzyMatchService)
+    private readonly fuzzy: FuzzyMatcher,
+    @Inject(CanonicalValuesService)
+    private readonly canonicalValues: CanonicalValueWriter,
   ) {}
 
   /**
@@ -108,11 +118,29 @@ export class CanonicalJobService {
       return { jobId, outcome: 'MATCHED', normalizedTitle, dedupHash: hash };
     }
 
-    // ── M7.3 slots in here ──────────────────────────────────────────────────
-    // No exact hash match. Tier 3 gets its one chance to find a fuzzy candidate
-    // within this `companySlug` before a new canonical job is opened; below the
-    // threshold it falls through to the create, because a false split is the
+    // No exact hash match, so tier 3 gets its one chance: a trigram pass inside
+    // this `companySlug`, confirmed by description. Below either threshold it
+    // returns null and falls through to the create, because a false split is the
     // cheaper error (§6.3).
+    const fuzzy = await this.fuzzy.findMatch({
+      companySlug: posting.companySlug,
+      normalizedTitle,
+      description: posting.description,
+    });
+    if (fuzzy) {
+      const jobId = await this.attach(input.postingId, fuzzy.jobId);
+      this.logger.log(
+        `Tier 3 matched "${normalizedTitle}" at ${posting.companySlug} to job ` +
+          `${jobId} (title ${fuzzy.titleSimilarity.toFixed(2)}, description ` +
+          `${fuzzy.descriptionSimilarity.toFixed(2)})`,
+      );
+      return {
+        jobId,
+        outcome: 'FUZZY_MATCHED',
+        normalizedTitle,
+        dedupHash: hash,
+      };
+    }
 
     const created = await this.create(
       posting,
@@ -149,24 +177,40 @@ export class CanonicalJobService {
   }
 
   /**
-   * Points the posting at the canonical job and stamps the job as seen.
-   * Returns the id actually attached to — the end of the merge chain, not
-   * necessarily the row that carried the hash.
+   * Points the posting at the canonical job, stamps the job as seen and re-derives
+   * its canonical values. Returns the id actually attached to — the end of the
+   * merge chain, not necessarily the row that carried the hash.
    */
   private async attach(postingId: string, jobId: string): Promise<string> {
-    const canonicalId = await this.resolveCanonicalId(jobId);
+    const canonicalId = await resolveCanonicalId(
+      this.prisma,
+      jobId,
+      this.logger,
+    );
     await this.prisma.jobPosting.update({
       where: { id: postingId },
       data: { jobId: canonicalId },
     });
     await this.stamp(canonicalId);
+    // The cluster just gained a posting, which may be the richest one in it (M7.4).
+    await this.canonicalValues.refresh(canonicalId);
     return canonicalId;
   }
 
-  /** Stamps an already-clustered posting's job, without moving the posting. */
+  /**
+   * Stamps an already-clustered posting's job, without moving the posting — and
+   * refreshes its canonical values anyway, because tier 1 may have rewritten this
+   * posting's description on this very run, and a shrunken incumbent should hand
+   * the canonical copy to a sibling.
+   */
   private async touch(jobId: string): Promise<string> {
-    const canonicalId = await this.resolveCanonicalId(jobId);
+    const canonicalId = await resolveCanonicalId(
+      this.prisma,
+      jobId,
+      this.logger,
+    );
     await this.stamp(canonicalId);
+    await this.canonicalValues.refresh(canonicalId);
     return canonicalId;
   }
 
@@ -175,7 +219,8 @@ export class CanonicalJobService {
    * unchanged path: the staleness sweep (M5.6, `DATABASE.md` §8) retires a job by
    * `lastSeenAt`, and a job with a posting in this run has been seen. Leaving it
    * stale would retire every job whose text nobody edits, which is most of them.
-   * Canonical field values are untouched — those are M7.4's.
+   * Canonical field values are untouched here — `attach` and `touch` hand that to
+   * `CanonicalValuesService`, which reads the whole cluster rather than one posting.
    */
   private async stamp(jobId: string): Promise<void> {
     await this.prisma.job.update({
@@ -238,44 +283,5 @@ export class CanonicalJobService {
       }
       throw error;
     }
-  }
-
-  /**
-   * Walks `mergedIntoJobId` to the end of the chain, so a posting joins the
-   * surviving job rather than a tombstone (D2). Mirrors `JobsService`, but ends
-   * differently: the read side 404s on a broken chain, while ingestion has a
-   * posting in hand and must put it somewhere, so it stops at the last row it could
-   * read and logs loudly.
-   */
-  private async resolveCanonicalId(id: string): Promise<string> {
-    const visited = new Set<string>();
-    let currentId = id;
-
-    for (let hop = 0; hop <= MAX_MERGE_HOPS; hop++) {
-      if (visited.has(currentId)) {
-        this.logger.error(
-          `Merge cycle detected while clustering into job ${id} (at ${currentId})`,
-        );
-        return currentId;
-      }
-      visited.add(currentId);
-
-      const row = await this.prisma.job.findUnique({
-        where: { id: currentId },
-        select: { id: true, mergedIntoJobId: true },
-      });
-      if (!row) {
-        return currentId;
-      }
-      if (!row.mergedIntoJobId) {
-        return row.id;
-      }
-      currentId = row.mergedIntoJobId;
-    }
-
-    this.logger.error(
-      `Merge chain for job ${id} exceeded ${MAX_MERGE_HOPS} hops`,
-    );
-    return currentId;
   }
 }

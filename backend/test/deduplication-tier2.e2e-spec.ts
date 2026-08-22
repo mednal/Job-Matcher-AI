@@ -8,7 +8,9 @@ import {
   CanonicalJobService,
   type ClusterAssignment,
 } from '../src/modules/deduplication/canonical-job.service';
+import { CanonicalValuesService } from '../src/modules/deduplication/canonical-values.service';
 import { dedupHash } from '../src/modules/deduplication/dedup-hash';
+import type { FuzzyMatcher } from '../src/modules/deduplication/fuzzy-match.service';
 import { toNormalizedTitle } from '../src/modules/deduplication/normalized-title';
 import type { NormalizedPosting } from '../src/modules/deduplication/posting-identity.service';
 import { FIXTURE_SOURCE_KEY } from '../src/modules/sources/adapters/fixture/fixture-source.adapter';
@@ -23,7 +25,15 @@ import { FIXTURE_SOURCE_KEY } from '../src/modules/sources/adapters/fixture/fixt
  *
  * Everything it writes is prefixed `t2-` / `tier2-`, so the seeded corpus is never
  * read, written, or cleaned up by mistake.
+ *
+ * Tier 3 is stubbed out (`NO_FUZZY_MATCH` below) so this file keeps saying what it
+ * says about tier 2 alone. The two tiers disagree on purpose in one place — a
+ * same-titled vacancy in another country, which tier 2 splits and tier 3 re-joins —
+ * and `deduplication-tier3.e2e-spec.ts` is where the wired-up behaviour is asserted.
  */
+
+/** Tier 3's answer when nothing clears its thresholds; see M7.3. */
+const NO_FUZZY_MATCH: FuzzyMatcher = { findMatch: () => Promise.resolve(null) };
 describe('Deduplication tier 2 — canonical hash (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
@@ -108,7 +118,12 @@ describe('Deduplication tier 2 — canonical hash (e2e)', () => {
     prisma = app.get(PrismaService);
 
     clock = new Date('2026-08-22T09:00:00.000Z');
-    canonical = new CanonicalJobService(prisma, () => clock);
+    canonical = new CanonicalJobService(
+      prisma,
+      () => clock,
+      NO_FUZZY_MATCH,
+      new CanonicalValuesService(prisma),
+    );
 
     const source = await prisma.jobSource.upsert({
       where: { key: FIXTURE_SOURCE_KEY },
@@ -224,7 +239,7 @@ describe('Deduplication tier 2 — canonical hash (e2e)', () => {
       expect(job.firstSeenAt).toEqual(new Date('2026-08-22T09:00:00.000Z'));
     });
 
-    it('does not join a same-titled vacancy in another country', async () => {
+    it('leaves a same-titled vacancy in another country to tier 3', async () => {
       const ie = posting();
       const ieId = await insertPosting(ie);
       const created = await canonical.assign(ie, {
@@ -243,8 +258,10 @@ describe('Deduplication tier 2 — canonical hash (e2e)', () => {
         jobId: null,
       });
 
-      // `countryCode` is a hash input, so two countries stay two vacancies. A false
-      // split is the cheap error here; a false merge hides a real job (§6.3).
+      // `countryCode` is a hash input, so tier 2 alone keeps two countries as two
+      // vacancies. A false split is the cheap error here; a false merge hides a
+      // real job (§6.3). Tier 3 is what re-joins this pair once it is wired in —
+      // it never reads the country — and the tier-3 e2e asserts that end of it.
       expect(split.outcome).toBe('CREATED');
       expect(split.jobId).not.toBe(created.jobId);
       expect(await countJobs()).toBe(2);
