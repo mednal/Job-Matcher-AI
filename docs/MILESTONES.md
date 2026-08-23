@@ -44,6 +44,7 @@ As of the last update to this file:
 | Development fixtures | Seeded (M2.7). 10 jobs covering all five `JuniorLevel` bands, English and German, the adversarial "Junior title / 5+ years body" case, a two-source job, an inactive job and a merged-away job. Hand-written, not classifier output — stamped `classifierVersion = "seed-fixture-1.0"`. This is the corpus Phases 6–8 should be checked against |
 | Normalization | **M6.1 implemented 2026-08-22**: `modules/normalization/` holds the text stage — `htmlToPlainText` (markup to plain text preserving paragraph and list breaks, non-prose elements dropped with their content, entities decoded last) and `normalizePlainText` (NFKC, invisible and control characters removed, whitespace and bullet markers folded, idempotent), behind an injectable `TextNormalizationService` with a three-pair fixture corpus. **M6.2 implemented 2026-08-22**: `company-slug.ts` (`toCompanySlug` — German-style ASCII folding so `Müller`/`Mueller`/`Muller` are one slug, joining punctuation deleted, trailing legal forms stripped repeatedly and only at the end, a name that is *only* a legal form kept intact), `location.ts` (`parseLocation` — free text into a display `location` plus an ISO alpha-2 `countryCode` from a curated English/German alias table, with **no city-to-country inference**, since `countryCode` feeds `dedupHash` and tier 3 covers the resulting split while nothing covers a false merge), the shared `ascii-fold.ts` (moved to `common/utils/` by M7.2, which needs the same folding and may not import this module), and `CompanyLocationService` — pinned by spec against both the fixture payloads and the seeded slugs. **M6.3 implemented 2026-08-22**: `phrase-match.ts` (ASCII-folded, token-aligned phrase matching with a three-token negation window), `workplace-type.ts` (REMOTE/HYBRID/ONSITE in English and German, title and location consulted before the description, remote-plus-onsite evidence resolving to HYBRID), `employment-type.ts` (the five-member enum, narrower arrangement winning so a Werkstudent posting is not recorded as PART_TIME), `technologies.ts` (a curated closed dictionary with its own symbol-aware boundaries, so `c#`, `.net` and `node.js` survive matching that `java` inside `javascript` does not), and `JobAttributesService`. Both detectors accept a `declared` value the adapter layer has already mapped to the enum, which wins over the text; `null` stays a real answer for both columns. **M6.4 implemented 2026-08-22**: `language.ts` (`detectLanguage` — stopword-frequency scoring over two deliberately disjoint English/German function-word sets, a supported `declared` code winning outright, English as the fallback for ties, unsupported codes and evidence-free input, and a floor of two German hits so one stray token cannot re-stem a description) plus `textSearchConfiguration`, which mirrors the `CASE` in the `searchVector` generated column by hand and is what M9.1 must build its `tsquery` through. Pinned against all ten seeded jobs and the three M6.1 HTML fixtures. **Phase 6 is complete.** `NormalizationModule` is still not imported by `AppModule`: `IngestionModule` takes it at M5.4 |
 | Deduplication | **M7.1 implemented 2026-08-22**: `modules/deduplication/` holds tier 1 — `PostingIdentityService.upsert` writes one `JobPosting` per `(sourceId, externalId)`, so re-ingestion updates in place. Returns `CREATED` / `UPDATED` / `UNCHANGED` for the run counters, where `UNCHANGED` means no column but `lastSeenAt` would change; `lastSeenAt` is stamped on every call because the M5.6 staleness sweep reads it, `firstSeenAt` never after the insert, and a re-listed posting is reactivated. `postingContentHash` hashes the **normalized** posting over every mutable column (not `RawJobDocument.contentHash`, which hashes the source payload). Tier 1 never assigns or clears `jobId` — that is M7.2/M7.3, and cluster membership must survive re-ingestion. A `P2002` insert race is resolved as a match by re-reading the winner. `DeduplicationModule` is imported by nothing yet: `IngestionModule` takes it at M5.4 alongside `NormalizationModule`. **M7.2 implemented 2026-08-22**: tier 2 — `normalized-title.ts` (`toNormalizedTitle` — ASCII-folded and lowercased, gender markers removed by a token rule so `(m/w/d)` and `(all genders)` go while `(Java)` stays, punctuation folded to word boundaries, and a deliberately **short** seniority list stripped; word order preserved, and a title that is only seniority words keeps them), `dedup-hash.ts` (`sha256(companySlug|normalizedTitle|countryCode)` in `prisma/seed.ts`'s exact format, pinned against all ten seeded jobs from their raw titles), and `CanonicalJobService.assign`, which attaches a posting to the `Job` carrying its hash — resolving `mergedIntoJobId` to the survivor first — or opens one, treating a `P2002` as a race and retrying it as a match (D1). A posting that is already clustered keeps its cluster; canonical field values are never rewritten on a match, since that is M7.4's. **Read M7.2's RECORDED HAZARD before extending the seniority list**: `dedupHash` is UNIQUE, so a stripped word makes two vacancies unrepresentable. **M7.3 implemented 2026-08-22**: tier 3 — `fuzzy-match.service.ts` (a `$queryRaw` trigram pass, `similarity("normalizedTitle", …) >= 0.75` scoped to one `companySlug`, candidates confirmed by `description-similarity.ts`, a token-set Jaccard at `>= 0.5`) behind the `FuzzyMatcher` seam in `assign`, with the new `FUZZY_MATCHED` outcome. It catches the same vacancy split by `countryCode` and title spelling drift; either gate failing, or a description too thin to carry evidence, opens a new `Job` instead. Both thresholds are still open question 2's conservative guess and M11 tunes them. This is the third place raw SQL is allowed (`DATABASE.md` §5), because Prisma cannot express `similarity()`. **M7.4 implemented 2026-08-22**, closing the phase: `canonical-values.ts` (the pure choice — longest description, ties broken on `firstSeenAt` then `id`, live postings over retired ones, so the answer cannot depend on the order a run fetched them in) behind `CanonicalValuesService.refresh`, which `CanonicalJobService` calls after every attach and on re-ingestion of a clustered posting but never after a create; `job-merge.service.ts` (`merge` — postings moved, the loser retained with `mergedIntoJobId`, existing tombstones re-pointed so chains stay one hop, both ids resolved through their chains first so it is idempotent and never self-redirects); and `merge-chain.ts`, the redirect walk now shared with tier 2 instead of copied. **The cluster's identity is frozen** — `dedupHash`, `normalizedTitle`, `companySlug`, `countryCode` — because `dedupHash` is UNIQUE and derived from three of them. Nothing calls `merge` automatically: it is a correction a human decides on, and D4 keeps the admin surface empty until M5.5. **Phase 7 is complete** |
+| Classification | **M8.1 implemented 2026-08-22**: `modules/classification/` holds the experience stage — `experience.ts` (`extractExperience` — six ordered numeric patterns in English and German: ranges, floors (`at least`, `mindestens`, `ab`, `über`, `N+`, `N years or more`), ceilings (`up to`, `maximal`, `less than`) and the bare figure, each claiming its span so a floor is never re-read as an exact value) behind `ExperienceExtractionService`, plus a 25-case fixture corpus. Three rules carry it: a quantity counts only within 40 characters of an experience word (`experience`, `…erfahrung`, `praxis`), searched on both sides, so company blurbs and team sizes do not become requirements; `minYears` is the **highest** floor stated anywhere, so the posting that welcomes "0-2 years" and then demands "5+ years" comes back `5 / null`; and every excerpt is a verbatim slice at its own offset, which M8.2's evidence requirement needs. Both language sets always run — they are disjoint by unit word, and German postings state figures in English. Eight of the ten seeded jobs are pinned to their hand-written bounds; the other two state no figure, and the `Junior QA Engineer` seed's `0 / 1` is phrase evidence (M8.2), asserted as a divergence rather than reverse-engineered. **M8.2 implemented 2026-08-23**: the phrase half — `signal.ts` (the `{ code, weight, evidence }` shape of §5.3 and the one weight table keyed by code, with polarity read off the *sign* so the two stored arrays are a partition of it), `phrase-signals.ts` (a phrase compiler that matches the **original** text so every excerpt keeps an offset: umlauts fold in the pattern, separators are flexible but a line break is not one, `~` opens a word edge for German compounds and `absolvent~`-style inflection, `*` is a gap of up to two words that cannot cross a sentence end; plus a three-word negation guard and the sentence-level excerpt), `signals.ts` (`extractSignals` — the numeric half from M8.1's mentions, at most one signal, leading its list per §6.4's precedence, and the phrase half at one signal per code, earliest occurrence winning) and `SignalExtractionService`. Both language sets always run, extending M8.1's divergence from §6.4's language selection to the phrases, because German ads state English phrases verbatim and `detectLanguage` falls back to `en`. Nothing is emitted without a verbatim excerpt. All 21 codes `seed-data.ts` uses are implemented and the spec asserts the extractor reproduces each seeded job's hand-written code set exactly, with one named addition. **M8.3 implemented 2026-08-23**: the classifier that weighs them — `junior-classifier.ts` (§6.4's `JuniorClassifier` interface, so M8.7's AI stage is an enhancement and never a dependency), `level-rules.ts` (`decideLevel`) and `RuleBasedClassifier` at `rules-1.0`, which runs the experience extractor once and hands its result to the signal extractor. §6.4's precedence is the *structure* of the rules rather than a weighting inside them: a floor of 3+ years settles the posting on the experienced side whatever else it says, failing that a ceiling of ≤2 years settles it on the junior side, failing that the phrase weights band it, and only a still-`AMBIGUOUS` result reads the title — for one step, never to `ENTRY_LEVEL` or `CLEARLY_EXPERIENCED`. The sides are asymmetric on purpose (concerns demote a junior figure as far as `AMBIGUOUS`; positives never rescue an experienced one) and `ENTRY_LEVEL` requires an outright statement rather than a weight total, which is what reproduces all ten seeded fixtures' levels. A 24-case corpus carries the adversarial case in both languages and both directions. **M8.4 implemented 2026-08-23**: `job-classification.service.ts` stores the verdict — `classificationInputHash` (title *and* description, so a renamed job is re-classified) is the cache key, unchanged text writes nothing at all, and standing the previous rows down, upserting and denormalizing onto `Job` are one transaction in that order, because the partial unique index rejects a second `isCurrent` row. **M8.5 implemented 2026-08-23**: `modules/scoring/` — `score-bands.ts` (`scoreFor`, pure) and `ScoringService`, bound to the `JUNIOR_SCORER` token M8.4 left open. Five bands tile 0–100 with no gap or overlap (`ENTRY_LEVEL` 85–100 down to `CLEARLY_EXPERIENCED` 0–14, the edges read off the ten hand-written seed scores), and the net signal weight positions a posting inside its own band, saturating at ±60 so no pile of evidence can reach a neighbouring band — which is why the number can never contradict the level. `score-naming.spec.ts` enforces §6.5's prohibition mechanically: no `probability`, `chance`, `likelihood` or `success rate` in any identifier or string literal under `src/` or `prisma/`, comments exempted so the warnings explaining the rule can stay. **M8.6 implemented 2026-08-23**: `__fixtures__/regression-corpus.ts` — 23 full-length anonymized English and German postings run end to end through the real module and scorer, asserting the level, both experience bounds, the signals present *and* absent, verbatim excerpts and the score's band, with `docs/CLASSIFICATION-CORPUS.md` recording what it guarantees and how to change it. **Phase 8 is complete** — M8.7's AI stage is optional and deliberately not implemented; see its entry. `ClassificationModule` is imported by nothing: `IngestionModule` takes it at M5.4 |
 | Ingestion configuration | `SOURCE_USER_AGENT_CONTACT` added to configuration, the Joi schema and `.env.example` (§7.3.2). `INGESTION_ENABLED` and `INGESTION_CRON` belong to M5.5 and are deliberately not added yet |
 | Everything else | Not started |
 
@@ -1452,47 +1453,423 @@ milestone that finally calls tier 1 then `assign` in sequence.
 Goal: the core product value — evidence-based classification, never title-only.
 
 ### M8.1 — Experience extraction
-- [ ] Ranges parsed in English and German: `0–1`, `0-2`, `3+`, `at least 5 years`,
+- [x] Ranges parsed in English and German: `0–1`, `0-2`, `3+`, `at least 5 years`,
       `mindestens 3 Jahre`, into `minYears` / `maxYears`
 - Verify: a fixture corpus with expected year bounds passes.
+- Verified 2026-08-22: `modules/classification/` — `experience.ts`
+  (`extractExperience`), `experience-extraction.service.ts`,
+  `classification.module.ts`, the 25-case corpus in
+  `__fixtures__/experience-corpus.ts` and their specs. The `Verify:` line is that
+  corpus: every case carries its expected `minYears` / `maxYears`, and most also
+  pin the exact verbatim excerpts.
+  - **A number alone is never evidence.** Every quantity has to sit within 40
+    characters of an experience word (`experience`, `…erfahrung`, `praxis`),
+    searched on both sides and cut at the line break, or it is discarded. Without
+    that gate "we have been building payments platforms for 15 years" is a 15-year
+    requirement, and so are team sizes and notice periods — all written with the
+    same digits. Two corpus cases pin the rejection, and the backwards half of the
+    window is what German word order needs: "Berufserfahrung von mindestens 4
+    Jahren" puts the word first.
+  - **Both language pattern sets always run**, which §6.4's "the pattern set is
+    selected by `JobPosting.language`" does not say. That rule is right for M8.2's
+    phrases — "mehrjährige Berufserfahrung" has no English reading — and wrong
+    here: each numeric pattern requires its own unit word (`years` against
+    `Jahre`), so the two sets are disjoint and cannot conflict, while German
+    postings routinely state the requirement in English. Selecting by language
+    would only lose matches; a corpus case is a German posting whose figure is
+    written `3+ years of professional experience`.
+  - **Patterns are ordered and claim their span**, so "at least 5 years" is read as
+    a floor rather than as the exact "5 years" inside it; the bare quantity is last.
+    Six forms: range, floor prefix (`at least`, `mindestens`, `ab`, `über`, `more
+    than`), `N+`, `N years or more`, ceiling (`up to`, `maximal`, `less than`), and
+    the bare figure.
+  - **`minYears` is the highest floor stated anywhere in the text.** The posting
+    that welcomes "0-2 years" in one paragraph and demands "5+ years" in another is
+    the case this product exists to catch, so the strictest requirement is the
+    honest reading; a corpus case is exactly that posting and it comes back
+    `5 / null`. An open-ended floor also clears any ceiling, and a ceiling below the
+    floor is dropped rather than stored — the result can never violate
+    `DATABASE.md` §5's `minYears <= maxYears` CHECK, which a spec pins.
+  - **Excerpts are verbatim slices of the input**, offsets included: nothing folds,
+    lowercases or rewrites the text, because M8.2 requires evidence to be verbatim
+    and M8.3 has to show a user why a job was called experienced. A spec re-slices
+    every mention at its own offset and compares.
+  - **Eight of the ten seeded jobs are pinned to their hand-written bounds.** The
+    two exceptions state no figure and must produce none: `Software Engineer`
+    ("the number of years on your CV") is seeded `null / null` and agrees, while
+    `Junior QA Engineer` is seeded `0 / 1` from "No experience required" — a phrase,
+    which is M8.2's evidence, not this stage's. Reading a number there would be
+    inventing one, so the divergence is asserted rather than papered over.
+  - **`ein`/`eine`/`einem`/`einer` are not numerals here**, though `zwei`–`zehn` and
+    `one`–`ten` are: they are the German indefinite article far more often, and
+    "seit einem Jahr am Markt" would otherwise be a one-year requirement. Figures
+    above 60 are rejected, matching the `yearsOfExperience BETWEEN 0 AND 60` CHECK,
+    so both sides of the eventual profile-fit comparison agree on what a plausible
+    number of years is.
+
+**A limitation left standing, for M8.3 to weigh.** The context gate removes the
+common false positives but not all of them: "our team brings 20 years of experience
+to every project" is a company blurb that reads as a 20-year floor. Tightening it
+further would need a requirement-vs-description distinction this stage does not
+have, and §6.4 already says numeric evidence beats phrase evidence — so a blurb like
+that can outvote a genuine "entry level" statement. M8.3 is where that precedence is
+implemented and is the right place to decide whether a floor with no supporting
+negative phrase should be trusted outright.
+
+**Not wired into a pipeline.** `ClassificationModule` is imported by nothing, like
+`NormalizationModule` and `DeduplicationModule` before it; `IngestionModule` takes
+all three at M5.4.
+- Checks after the change: backend `npm test` 47 suites / 652 tests and
+  `npm run test:e2e` 10 suites / 109 tests pass (from 45/601 and 10/109 — this
+  milestone adds no database work, so the e2e count is unchanged and was run to
+  prove that), `npm run build` clean, `npm run lint` clean, Prettier-clean.
 
 ### M8.2 — Signal extraction
-- [ ] Positive patterns: entry level, recent graduates welcome, no experience
+- [x] Positive patterns: entry level, recent graduates welcome, no experience
       required, training provided, Berufseinsteiger
-- [ ] Negative patterns: `N+ years` where N is 3 or more, senior responsibilities,
+- [x] Negative patterns: `N+ years` where N is 3 or more, senior responsibilities,
       lead a team, team management, extensive production experience
-- [ ] Each match emits `{ code, weight, evidence }` with a **verbatim** excerpt
+- [x] Each match emits `{ code, weight, evidence }` with a **verbatim** excerpt
 - Verify: unit tests assert the excerpt is present and unmodified.
+- Verified 2026-08-23: `modules/classification/` — `signal.ts` (the `Signal` shape
+  and the weight table), `phrase-signals.ts` (the phrase compiler, the negation
+  guard, the excerpt and the dictionary), `signals.ts` (`extractSignals`, which
+  combines the numeric and phrase halves), `signal-extraction.service.ts`, the
+  25-case corpus in `__fixtures__/signal-corpus.ts` and their specs. The `Verify:`
+  line is asserted three times over: for every corpus case, for every seeded
+  description, and as a property — `expect(description).toContain(signal.evidence)`
+  on every signal produced anywhere in the suite.
+  - **Matching runs over the original text, not a normalized copy.** That is the
+    decision the phrase file is shaped around and the reason
+    `normalization/phrase-match.ts` could not be reused even if §4.3 allowed the
+    import: it folds and strips its haystack before matching, which destroys every
+    offset, and an offset is what a verbatim excerpt is recovered from. The
+    tolerance that file gets from folding the haystack, this gets from compiling
+    each phrase into a pattern that matches every spelling of itself — `ä` matches
+    `ä`, `ae` and `a`, so a lost encoding is still one phrase; separators are
+    flexible so `entry level` and `entry-level` are one entry, but a line break is
+    not a separator, because M6.1 keeps paragraph breaks and a phrase does not span
+    two paragraphs.
+  - **Two operators keep the dictionary short.** `~` opens a word edge, so
+    `~erfahrung` reaches `Berufserfahrung` and `Praxiserfahrung` without listing
+    German compounds and `absolvent~` reaches `Absolventinnen`; the boundary at the
+    *phrase* edge still holds, so an excerpt starts and ends on whole words. `*` is
+    a gap of **up to two words**, so `no * experience * required` is one entry
+    covering "no experience required" and "no professional experience is required".
+    Two rather than three deliberately: at three, `lead * team` starts matching "our
+    lead engineer and the platform team". A gap word may not contain a full stop, so
+    a gap cannot cross a sentence end.
+  - **Both language sets always run**, which extends M8.1's divergence from §6.4's
+    "the pattern set is selected by `JobPosting.language`" to the phrases — and
+    contradicts M8.1's own aside that the rule was right for them. Two things
+    changed the answer. German postings mix English constantly, and "This is an
+    entry level position" appears in German ads verbatim (a corpus case), so
+    selecting would lose real matches. And `detectLanguage` (M6.4) falls back to
+    `en` for short or evidence-free text, so a misdetection would switch the German
+    set off on exactly the postings that need it. The two vocabularies share no
+    word, so running both cannot conflict; the day a phrase is added that reads
+    differently in the other language is the day this needs a language gate.
+  - **A negator within three words in front of a match kills it.** "This is not an
+    entry level role" and "Keine mehrjährige Berufserfahrung nötig" both produce
+    nothing, and "We have no on-call rotation" is not on-call duty — three corpus
+    cases. Phrases that carry their own negation are unaffected, because their
+    negator is inside the match rather than in front of it. The negator list is the
+    one `normalization/phrase-match.ts` uses and is deliberately a second copy: that
+    one inspects folded tokens, this inspects the original text, and §4.3 forbids
+    the import that would share them.
+  - **The evidence is the sentence, not the phrase.** Two words quoted out of a
+    posting explain nothing, so the excerpt expands to the sentence its match sits
+    in, capped at 150 characters either way and cut at a paragraph break. It is
+    always a contiguous slice of the input — nothing is folded, joined or
+    summarized — which is what `DATABASE.md` §4.1 makes non-negotiable.
+  - **One signal per code, and the earliest occurrence wins.** A posting that says
+    "training provided" three ways has said one thing; counting it three times would
+    let repetition outweigh evidence at M8.5. A corpus case pins it.
+  - **No signal is emitted without an excerpt.** A signal with empty evidence would
+    still move the score with nothing to show for it. This is why the numeric signal
+    is derived from an `ExperienceMention` rather than from the aggregate bounds —
+    an aggregate has no offset and therefore nothing to quote.
+  - **The numeric half is one signal at most, and it leads its list.** `minYears ≥
+    5` is `REQUIRES_5_PLUS_YEARS`, 3–4 is `REQUIRES_3_PLUS_YEARS`, and a ceiling at
+    or below two years is the matching `ZERO_TO_ONE` / `ZERO_TO_TWO` /
+    `ONE_TO_TWO` / `UP_TO_TWO_YEARS`. A range like "1 to 4 years" produces
+    **nothing**: its floor is below the experienced threshold and its ceiling above
+    the junior one, so it says only that the employer has not decided, and putting a
+    number on a shrug is worse than silence. A ceiling with no floor stays
+    `UP_TO_TWO_YEARS` rather than being read as `0-2`, which is a range the posting
+    never wrote. It leads the list because §6.4 weighs it first.
+  - **The title is not read here.** §6.4 makes the title one input among many and
+    M8.3 owns the rule that it never decides alone, so it is that milestone's input.
+    Matching phrases in it too would double-count a posting whose title repeats its
+    body and hand the title a vote it is not supposed to have.
+  - **The weights live in one table keyed by code**, not beside the phrases, because
+    M8.5 reads them too and a second copy is how a scorer and an extractor come to
+    disagree about what a signal is worth. Polarity is the *sign* of the weight —
+    there is no separate field, so the two arrays `JobClassification` stores are a
+    partition on the sign and cannot drift out of step with it.
+  - **The vocabulary is the seeds' vocabulary, and the seeds are now reproduced.**
+    All 21 codes `prisma/seed-data.ts` uses are implemented, and the spec asserts
+    that on each of the ten seeded descriptions the extractor finds exactly the codes
+    a person wrote by hand — with one named addition: the German junior posting's
+    "…strukturierte Einarbeitung mit festem Mentor" is counted once by the seed
+    (`TRAINING_PROVIDED`) and twice by the extractor, which also reads the named
+    mentor as `MENTORING_OFFERED`. The seed is the terser judgement, not the more
+    correct one. Two weights diverge from the seeds on purpose:
+    `ZERO_TO_ONE_YEARS` and `ZERO_TO_TWO_YEARS` are equal (the seeds score the wider
+    range higher, which cannot be right) and `TRAINING_PROVIDED` is one number
+    rather than the seeds' 15 and 10.
+
+**A limitation left standing, for M8.3.** The dictionary is a fixed list and says
+nothing about *where* in a posting a phrase sits, so a benefits section that offers
+"Weiterbildung" and a requirements section that demands "mehrjährige Berufserfahrung"
+arrive as two signals of equal standing. The precedence rule M8.3 implements —
+numeric beats phrase — is what stops that from mattering in the case it matters most,
+and the corpus case "junior wording in one paragraph, five years in another" is
+already there to prove it.
+
+**Not wired into a pipeline.** `ClassificationModule` is still imported by nothing;
+`IngestionModule` takes it at M5.4 with `NormalizationModule` and
+`DeduplicationModule`.
+- Checks after the change: backend `npm test` 50 suites / 724 tests and
+  `npm run test:e2e` 10 suites / 109 tests pass (from 47/652 and 10/109 — this
+  milestone adds no database work, so the e2e count is unchanged and was run to
+  prove that), `npm run build` clean, `npm run lint` clean, Prettier-clean.
 
 ### M8.3 — Rule-based classifier
-- [ ] `JuniorClassifier` interface; `RuleBasedClassifier` always runs
-- [ ] Outputs `ENTRY_LEVEL`, `LIKELY_ENTRY_LEVEL`, `AMBIGUOUS`, `EXPERIENCED`, `CLEARLY_EXPERIENCED`
-- [ ] Precedence: numeric evidence beats phrase evidence beats title; the title
+- [x] `JuniorClassifier` interface; `RuleBasedClassifier` always runs
+- [x] Outputs `ENTRY_LEVEL`, `LIKELY_ENTRY_LEVEL`, `AMBIGUOUS`, `EXPERIENCED`, `CLEARLY_EXPERIENCED`
+- [x] Precedence: numeric evidence beats phrase evidence beats title; the title
       never decides alone
-- [ ] `classifierVersion` recorded on every result
+- [x] `classifierVersion` recorded on every result
 - Verify: **the adversarial corpus passes** — a "Junior Developer" title with
   `5+ years` in the body classifies as `EXPERIENCED`, and the reverse case is caught.
+- Verified 2026-08-23: `modules/classification/` — `junior-classifier.ts` (the
+  `JuniorClassifier` interface of §6.4 with `ClassificationInput` /
+  `ClassificationResult`), `level-rules.ts` (`decideLevel`, the whole decision),
+  `rule-based.classifier.ts` (`RuleBasedClassifier`, `rules-1.0`), the 24-case
+  corpus in `__fixtures__/classification-corpus.ts` and their specs. The `Verify:`
+  line is the corpus's first six cases, in both languages and in both directions.
+  - **Precedence is the structure of `level-rules.ts`, not a weighting inside it.**
+    Each kind of evidence gets its turn only when the stronger kind has nothing
+    decisive to say: a floor of three years or more settles the posting on the
+    experienced side; failing that, a ceiling of two years or less settles it on the
+    junior side; failing that the phrase weights band it; and only if all of that
+    comes out `AMBIGUOUS` is the title read. A weighted sum with the number worth a
+    lot would have been the other way to build this, and it is the wrong one — it
+    makes "Junior title, `5+ years`" a matter of how many friendly phrases the ad
+    also contains, when the whole point is that no number of them can matter.
+  - **The two sides are deliberately asymmetric.** Negative phrases can demote a
+    junior *figure* as far as `AMBIGUOUS` — "1-2 years" next to "you will lead a
+    small team and own the architecture" is not an entry-level job — but positive
+    phrases cannot pull an experienced figure back up at all. The failure this
+    product exists to prevent is a junior applying to a job that wants five years;
+    the reverse costs a user one scroll. It also follows from M8.1, where the
+    aggregate floor is the *highest* stated anywhere: by the time a floor of five
+    reaches this file, five years is the strictest thing the posting said.
+  - **`ENTRY_LEVEL` needs a statement, not a total.** It is claimed only when the
+    posting says outright that it is open to someone with no professional experience
+    — `ENTRY_LEVEL_STATED`, `CAREER_STARTER_WELCOME`, `NO_EXPERIENCE_REQUIRED`, or a
+    `0-1` range — and everything else that reads as junior (a graduate programme,
+    training, mentoring, a `0-2` range) lands on `LIKELY_ENTRY_LEVEL`. That rule,
+    not a tuned threshold, is what reproduces all ten seeded fixtures' levels; the
+    spec asserts it job by job. `GRADUATES_WELCOME` is deliberately not in the set,
+    because an ad can welcome graduates and five-year engineers in one breath.
+  - **The title moves one step, from `AMBIGUOUS` only.** It cannot produce
+    `ENTRY_LEVEL` or `CLEARLY_EXPERIENCED` from any string, and it is not read at all
+    once the body has reached a verdict — asserted over sixteen real titles in both
+    languages. A posting with no description is still classified rather than
+    rejected, on its title alone, which is exactly the case that can only reach
+    `LIKELY_ENTRY_LEVEL` or `EXPERIENCED`.
+  - **The figure is not counted twice.** M8.2 emits the numeric requirement as a
+    signal like any other, so the classifier excludes those codes from the phrase
+    sums via a new `NUMERIC_SIGNAL_CODES` export in `signals.ts` — otherwise the -35
+    a `3+ years` floor already carries would combine with one -15 concern and push a
+    plain "3+ years" ad a second level down for saying one thing. A spec pins the set
+    against the numeric half so a code cannot be added to one and not the other.
+  - **A stated divergence from this milestone's own wording.** The `Verify:` line
+    says the Junior/`5+ years` posting is `EXPERIENCED`; it comes out
+    `CLEARLY_EXPERIENCED`, which is the same finding one level stronger and is what
+    the seeded fixture for that exact posting (`vantage-junior-java`) says. Five
+    years is the line between the two levels, so the corpus pins
+    `CLEARLY_EXPERIENCED` at five and `EXPERIENCED` at three, and a separate
+    assertion states the milestone's own claim: every Junior-titled posting that
+    demands years stays on the experienced side.
+
+**Not wired into a pipeline.** `ClassificationModule` exports the classifier
+alongside both extractors — M8.4 needs the experience bounds for `Job` and M8.6
+exercises the stages separately — but is still imported by nothing. `IngestionModule`
+takes it at M5.4.
+- Checks after the change: backend `npm test` 52 suites / 785 tests and
+  `npm run test:e2e` 10 suites / 109 tests pass (from 50/724 and 10/109 — this
+  milestone adds no database work, so the e2e count is unchanged and was run to
+  prove that), `npm run build` clean, `npm run lint` clean, Prettier-clean.
 
 ### M8.4 — Classification persistence
-- [ ] `JobClassification` written with `inputHash`, signals, and version
-- [ ] Unchanged text skips re-classification (cached by `inputHash`)
-- [ ] Exactly one `isCurrent` row per job, denormalized onto `Job`
+- [x] `JobClassification` written with `inputHash`, signals, and version
+- [x] Unchanged text skips re-classification (cached by `inputHash`)
+- [x] Exactly one `isCurrent` row per job, denormalized onto `Job`
 - Verify: an integration test — re-running on unchanged text writes no new row; a
   changed description creates one and moves `isCurrent`.
+- Verified 2026-08-23: `modules/classification/` — `job-classification.service.ts`
+  (`JobClassificationService.classifyAndPersist`, the only place a verdict meets the
+  database), `classification-input-hash.ts` (the cache key),
+  `classification.tokens.ts` (`CLASSIFICATION_CLOCK`, `JUNIOR_SCORER`), their specs,
+  and `test/classification-persistence.e2e-spec.ts`, which is the `Verify:` line
+  against a real database with the real classifier and only the clock substituted.
+  - **The cache key is the classifier's own input, not the posting's content hash.**
+    `classificationInputHash` hashes exactly the fields `ClassificationInput` carries
+    — title and description — which is what makes it correct rather than merely
+    convenient: two calls with an equal hash are calls the classifier cannot tell
+    apart, so re-running it is guaranteed to reproduce the stored row. It also
+    answers the note M7.4 left this phase. `JobPosting.contentHash` moves when a URL
+    moves and does *not* move when M7.4 re-derives a `Job`'s canonical description
+    from a different posting, so keying on it would both re-classify for nothing and
+    miss the case that matters; keying on the canonical text cannot.
+  - **The title is in the hash, which diverges from `prisma/seed.ts`.** The seed
+    hashes the description alone. `decideLevel` reads the title, so a job renamed
+    from "Senior" to "Junior" over one unchanged description is a different
+    classification and must not be answered from the cache — the e2e asserts exactly
+    that, `AMBIGUOUS` to `LIKELY_ENTRY_LEVEL` with the body untouched. The seed
+    writes under `seed-fixture-1.0` and this service under `rules-1.0`, so the two
+    key spaces never meet.
+  - **A hit on an already-current row writes nothing at all.** Not the row, not
+    `Job`, not `classifiedAt` — which is the point of that column keeping its
+    meaning: it is when the verdict was reached, not when a run last looked. The
+    other hit is a description that changed and changed back, where the stored row is
+    still the right answer, so `isCurrent` moves back onto it and the classifier
+    still does not run. Both are `CACHED`; only a miss is `CLASSIFIED`.
+  - **Standing down, writing and denormalizing are one transaction, in that order.**
+    The partial unique index rejects a second `isCurrent` row, so the previous rows
+    have to go down before the insert — the same order the seed uses. A `Job` whose
+    denormalized block disagrees with its current row is a silent wrong answer in
+    Phase 9's search, so every path that moves `isCurrent` ends in the same
+    `denormalize`. The e2e proves the index rather than trusting the service: setting
+    a stood-down row back to `isCurrent` by hand fails with `P2002`.
+  - **`upsert`, not `create`.** The lookup and the insert are not one atomic step, so
+    two runs on one job would race and one would die on the unique key. Re-writing an
+    identical row is harmless because the result is a pure function of text both runs
+    read.
+  - **The score is M8.5's, and this milestone does not invent one.**
+    `JobClassification.score` is NOT NULL while §6.5 puts every rule for producing a
+    number in the next milestone, so persistence takes it from an optional
+    `JUNIOR_SCORER` token that nothing binds yet and writes `0` until M8.5 binds
+    `ScoringService`. The alternative — a band table here as well — is exactly how a
+    scorer and its store come to disagree. Zero is visibly a placeholder rather than
+    a plausible score, and nothing reads the column before M8.5: the pipeline that
+    fills the table is M5.4 and the search that filters on it is Phase 9.
+  - **`ClassificationModule` now names `PrismaModule` in its imports.** It is
+    `@Global()`, so the application never needed the line, but the four specs in this
+    folder compile `ClassificationModule` on its own, where a global registered by
+    `AppModule` does not exist.
+
+**Not wired into a pipeline.** `ClassificationModule` exports
+`JobClassificationService` alongside the classifier and both extractors, and is still
+imported by nothing; `IngestionModule` takes it at M5.4, which is the milestone that
+calls it once deduplication has decided which `Job` a posting belongs to.
+- Checks after the change: backend `npm test` 54 suites / 803 tests and
+  `npm run test:e2e` 11 suites / 118 tests pass (from 52/785 and 10/109),
+  `npm run build` clean, `npm run lint` clean, Prettier-clean on every file this
+  milestone touched. The e2e scopes its cleanup to the `m84-vantage-payments`
+  company slug; the database after the run holds the 10 seeded jobs and their 10
+  `seed-fixture-1.0` classifications, one current row each, and no `rules-1.0` row.
 
 ### M8.5 — Scoring
-- [ ] `ScoringService`: deterministic and pure, `ClassificationResult` to 0–100
-- [ ] A band from the `JuniorLevel`, adjusted within the band by signal weights
-- [ ] The field is named `juniorScore` / `score` — never `probability`, `chance`,
+- [x] `ScoringService`: deterministic and pure, `ClassificationResult` to 0–100
+- [x] A band from the `JuniorLevel`, adjusted within the band by signal weights
+- [x] The field is named `juniorScore` / `score` — never `probability`, `chance`,
       `likelihood`, `successRate`, or `matchProbability`
 - Verify: unit tests on band boundaries; a naming check confirms no probability
   wording anywhere in the API surface.
+- Verified 2026-08-23: `modules/scoring/` — the module §4.1 reserved for this, and the
+  only one in the pipeline that depends on nothing. `score-bands.ts` (`SCORE_BANDS`,
+  `WEIGHT_SATURATION`, `scoreFor` — the whole calculation, pure), `scoring.service.ts`
+  (`ScoringService.score`, its injectable face), `scoring.module.ts` and the two
+  specs; `ClassificationModule` now binds `JUNIOR_SCORER` to it, which is the seam
+  M8.4 left open and the only change that milestone's code needed.
+  - **The bands tile 0–100 with no gap and no overlap**: `ENTRY_LEVEL` 85–100,
+    `LIKELY_ENTRY_LEVEL` 65–84, `AMBIGUOUS` 40–64, `EXPERIENCED` 15–39,
+    `CLEARLY_EXPERIENCED` 0–14. That is what makes "the score never contradicts the
+    level" true by construction rather than by tuning — a card showing 78 next to
+    "Likely entry level" cannot be a contradiction, and §6.5's fallback (show the band
+    where the evidence cannot be shown) stays honest. The spec asserts the tiling, and
+    asserts the ordering end to end over every neighbouring pair at both extremes of
+    the evidence.
+  - **The edges were read off the seeds, not invented.** The ten hand-written M2.7
+    classifications sit at 88–94, 72–79, 48, 21 and 2–6 — every one inside the band
+    its level now gets, and the spec pins that. Those numbers were written by a person
+    before any of this code existed, so agreeing with them is the strongest available
+    evidence that the scale matches human judgement rather than having been fitted to
+    the classifier. The exact figures are deliberately **not** reproduced: the seeds
+    are stamped `seed-fixture-1.0` and this scorer writes `rules-1.0`.
+  - **Every signal counts in the adjustment, the numeric one included** — the opposite
+    of `phraseWeight` in `level-rules.ts`, and deliberately so. There, excluding the
+    figure stopped it deciding the level twice. Here the level is already settled and
+    nothing can change it, so the figure is simply the strongest thing the posting
+    said about itself: a five-year floor has to rank below a three-year one *inside*
+    `CLEARLY_EXPERIENCED`, and it only can if its weight is read.
+  - **Saturating, not scaling.** A net weight of ±60 — roughly two strong statements
+    in one direction — puts a posting at its band edge, and more evidence moves it no
+    further. A linear scale with no ceiling would need clamping anyway; the saturation
+    says why the clamp is there. A posting with no signals at all lands mid-band,
+    which is the honest answer: the band is what was established, and nothing inside
+    it was.
+  - **The naming check is a test, not a review rule.** `score-naming.spec.ts` walks
+    every `.ts` file in `src/` and `prisma/`, strips comments with a character scanner
+    (a regex mistakes `'https://…'` for a line comment and would silently stop
+    checking whole files), and fails on `probabilit*`, `chance`, `likelihood` or
+    `success rate` in identifiers or string literals. Comments are exempt on purpose:
+    four files carry a comment saying the score is *never* a hiring probability, and a
+    check that failed on those would teach the next author to delete the warning. The
+    spec excludes itself by exact path, since the prohibited words are its subject.
+  - **`UNSCORED` stays as the optional default** for the unit specs that construct
+    `JobClassificationService` by hand. Nothing resolving `JUNIOR_SCORER` through the
+    module can see it any more, and `classification-persistence.e2e-spec.ts` now
+    asserts the stored `juniorScore` falls in its level's band instead of being `0`.
 
 ### M8.6 — Classification test corpus
-- [ ] A corpus of anonymized English and German descriptions with expected outcomes
-- [ ] Ambiguous and adversarial cases included
-- [ ] Documented as the regression net for the core value proposition
+- [x] A corpus of anonymized English and German descriptions with expected outcomes
+- [x] Ambiguous and adversarial cases included
+- [x] Documented as the regression net for the core value proposition
 - Verify: the corpus runs in CI and every case passes.
+- Verified 2026-08-23: `__fixtures__/regression-corpus.ts` (23 full-length postings),
+  `classification-regression.spec.ts` (the runner — 69 case assertions plus 5 about
+  the corpus itself) and **`docs/CLASSIFICATION-CORPUS.md`**, which is the "documented
+  as the regression net" line: what it guarantees, what it covers, and the rules for
+  changing it.
+  - **Full postings, not fixtures.** `classification-corpus.ts` (M8.3) is 24 short
+    texts each pinning one branch of `decideLevel`; this one is postings with the
+    noise real ones carry — benefits paragraphs, tech stacks, a sentence about the
+    team — because the failure the product exists to prevent happens where the
+    decisive sentence is *buried*, not in a two-line fixture. Both are wanted: a unit
+    corpus fails with a message about a rule, this one fails with a message about a
+    posting.
+  - **Every case is anonymized by construction.** Each description is a paraphrase
+    written for this repository — no text copied from a board, every company invented
+    — which is what keeps it storable under §7.5, and the doc states it as a
+    constraint on every future addition.
+  - **A case asserts the whole answer, not just the level**: the level, both
+    experience bounds (they back M9.2's `maxYearsRequired`, so a wrong bound hides
+    jobs), that every named signal is present, that named `absent` signals are not —
+    which is how a case pins against *over*-matching — that every excerpt occurs in
+    the posting verbatim, that no code is reported twice, and that the M8.5 score
+    lands in its level's band. Nothing is stubbed: the real module, the real
+    extractors, the real scorer.
+  - **The runner also asserts things about the corpus**, so a later edit cannot
+    quietly shrink it to the cases that happen to pass: every level present in both
+    languages, adversarial cases in both directions, at least four ambiguous cases,
+    and every description a real posting's length.
+  - **Ambiguous cases are load-bearing.** Five of the 23 are postings where the honest
+    answer is that the employer has not said — a neutral title over a silent body in
+    both languages, `1 to 4 years`, a junior figure with a senior job attached to it,
+    and an employer that refuses to count years at all. A confident wrong verdict is
+    the failure this product must not produce, so these are as protected as the
+    adversarial ones.
+  - **The corpus was mutation-checked**, not merely run: flipping one expected level
+    made the suite fail on that posting by name, which is the only way to know that a
+    green corpus is asserting anything.
+  - CI is M12.5 and does not exist yet. The suite is plain and unconditional — no
+    database, no network, no fixtures on disk — so it runs the moment CI runs
+    `npm test`, and the doc records that nothing may make it conditional.
 
 ### M8.7 — AI classifier stage (optional, feature-flagged)
 - [ ] `AiClassifier` behind `AI_CLASSIFIER_ENABLED`, off by default
@@ -1503,6 +1880,14 @@ Goal: the core product value — evidence-based classification, never title-only
 - Verify: with the flag off, no AI call is made and classification still works.
 - Note: open question 3 — whether this ships in v1 is a cost/quality call once M8.6
   gives a rule-based accuracy number. The flag makes either outcome cheap.
+- **Deliberately not implemented (2026-08-23).** The milestone is optional and gated
+  on that call, and the number it was waiting for now exists: the M8.6 corpus passes
+  23/23 with no case needing a second opinion, and the rule-based classifier
+  reproduces all ten hand-written seed levels. Nothing in the MVP is blocked on an AI
+  stage, `JuniorClassifier` keeps it an enhancement rather than a dependency, and
+  `CLAUDE.md` says not to implement future features unless asked. **Phase 8 is closed
+  at M8.6**; revisit this at M12.3, which is the first point real postings can say
+  whether the rules are enough.
 
 ---
 
