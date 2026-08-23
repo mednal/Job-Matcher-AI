@@ -2,6 +2,7 @@ import type {
   FetchContext,
   JobSourceAdapter,
   RawJob,
+  RawJobFields,
   SourceDescriptor,
   SourceFetchParams,
   SourcePage,
@@ -29,6 +30,14 @@ export abstract class PaginatedSourceAdapter implements JobSourceAdapter {
     request: SourcePageRequest,
     ctx: FetchContext,
   ): Promise<SourcePage>;
+
+  /**
+   * Left abstract rather than given a default (M5.4). A base class cannot guess a
+   * source's field names, and a default returning empty strings would turn a
+   * forgotten mapping into postings with no title — which tier 1 rejects one at a
+   * time, quietly, as item failures. Unimplemented, it does not compile.
+   */
+  abstract toRawFields(payload: unknown): RawJobFields;
 
   async *fetchJobs(
     params: SourceFetchParams,

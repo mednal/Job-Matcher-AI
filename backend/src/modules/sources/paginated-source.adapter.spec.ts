@@ -3,6 +3,7 @@ import { PaginatedSourceAdapter } from './paginated-source.adapter';
 import type {
   FetchContext,
   RawJob,
+  RawJobFields,
   SourceDescriptor,
   SourcePage,
   SourcePageRequest,
@@ -47,6 +48,17 @@ class ScriptedAdapter extends PaginatedSourceAdapter {
     this.requests.push(request);
     const page = this.pages[request.pageNumber - 1] ?? { jobs: [] };
     return Promise.resolve(page);
+  }
+
+  /**
+   * These cases drive the pagination loop, not the mapping. Present because the
+   * base declares it abstract (M5.4).
+   */
+  toRawFields(payload: unknown): RawJobFields {
+    return {
+      title: String((payload as { id?: string })?.id ?? ''),
+      companyName: 'Scripted',
+    };
   }
 }
 

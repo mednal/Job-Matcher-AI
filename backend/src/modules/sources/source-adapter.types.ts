@@ -1,5 +1,9 @@
 import type { Logger } from '@nestjs/common';
-import type { AccessMethod } from '@prisma/client';
+import type {
+  AccessMethod,
+  EmploymentType,
+  WorkplaceType,
+} from '@prisma/client';
 
 // The contract every job source implements (docs/ARCHITECTURE.md §6.1). These types
 // are the only thing the rest of the application may know about a source: nothing
@@ -22,6 +26,39 @@ export interface RawJob {
   payload: unknown;
   /** Only when the source states it. Enables the `since` early-stop below. */
   postedAt?: Date;
+}
+
+/**
+ * One posting's payload restated in the shared vocabulary — the seam that lets the
+ * orchestrator normalize a posting without knowing which source produced it.
+ *
+ * `RawJob.payload` is `unknown` on purpose, and §4.2 lets only `sources/` read a
+ * source-specific field name. Something therefore has to translate, and it has to
+ * be the adapter. Every field here is *what the source said*, not a decision: the
+ * text is unnormalized and may still be markup, and the two enum fields are what
+ * the source **declared**, which M6.3's detectors take as evidence that outranks
+ * the description but is not itself the answer.
+ *
+ * Deliberately not folded into `RawJob`. The mapping is a pure function of a stored
+ * payload, so keeping it callable on its own is what lets a future re-normalization
+ * replay `RawJobDocument` rows (`DATABASE.md` §6) without contacting the source
+ * again.
+ */
+export interface RawJobFields {
+  /** Required: tier 1 rejects a posting without one, and tiers 2/3 match on it. */
+  readonly title: string;
+  readonly companyName: string;
+  /** Free text. `parseLocation` splits it into a display value and a country. */
+  readonly location?: string | null;
+  /** Markup or plain text — the normalizer takes either and does not need telling. */
+  readonly description?: string | null;
+  /** Only when the source states it in a field of its own, already mapped. */
+  readonly workplaceType?: WorkplaceType | null;
+  readonly employmentType?: EmploymentType | null;
+  /** Whatever language code the source published, in whatever form. */
+  readonly language?: string | null;
+  /** Falls back to `RawJob.postedAt` when the mapping cannot produce one. */
+  readonly postedAt?: Date | null;
 }
 
 export interface SourceFetchParams {
@@ -101,6 +138,17 @@ export interface JobSourceAdapter {
     params: SourceFetchParams,
     ctx: FetchContext,
   ): AsyncIterable<RawJob>;
+  /**
+   * Reads a payload this adapter produced into the shared vocabulary (M5.4).
+   *
+   * The one method allowed to name a source-specific field, and the reason nothing
+   * downstream has to. Pure and synchronous: it is handed a payload, never a
+   * connection, so it can be replayed over stored `RawJobDocument` rows.
+   *
+   * Throws when the payload cannot yield a usable posting — the orchestrator counts
+   * that as an item failure and carries on, exactly as it does for a bad write.
+   */
+  toRawFields(payload: unknown): RawJobFields;
 }
 
 /** One page request, handed to `PaginatedSourceAdapter.fetchPage`. */

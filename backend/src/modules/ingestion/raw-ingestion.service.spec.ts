@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { IngestionStatus, IngestionTrigger } from '@prisma/client';
+import type { JobPipelineService } from './job-pipeline.service';
 import { RawIngestionService } from './raw-ingestion.service';
 import { StaleRunReaperService } from './stale-run-reaper.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -12,6 +13,7 @@ import type {
   FetchContext,
   JobSourceAdapter,
   RawJob,
+  RawJobFields,
   SourceDescriptor,
 } from '../sources/source-adapter.types';
 
@@ -45,6 +47,10 @@ function adapterYielding(
 ): JobSourceAdapter {
   return {
     descriptor: descriptor(),
+    toRawFields: (payload: unknown): RawJobFields => ({
+      title: `Title ${String((payload as { id?: string })?.id ?? '')}`,
+      companyName: 'Scripted Co',
+    }),
     // eslint-disable-next-line @typescript-eslint/require-await
     async *fetchJobs(): AsyncIterable<RawJob> {
       for (let i = 0; i < items.length; i++) {
@@ -73,9 +79,14 @@ interface Harness {
 
 function harness(
   adapter: JobSourceAdapter,
-  options: { enabled?: boolean; inFlight?: number } = {},
+  options: {
+    enabled?: boolean;
+    inFlight?: number;
+    /** Unset leaves the JOB_PIPELINE seam empty — M5.3's raw-only shape. */
+    pipeline?: { process: jest.Mock };
+  } = {},
 ): Harness {
-  const { enabled = true, inFlight = 0 } = options;
+  const { enabled = true, inFlight = 0, pipeline = null } = options;
 
   const prisma = {
     jobSource: {
@@ -111,6 +122,7 @@ function harness(
     registry,
     reaper as unknown as StaleRunReaperService,
     () => NOW,
+    pipeline as unknown as JobPipelineService | null,
   );
 
   return { service, prisma, reaper };
@@ -414,20 +426,65 @@ describe('RawIngestionService', () => {
   });
 
   describe('run counters', () => {
-    // M5.3 populates only these three. The rest belong to stages that do not exist
-    // yet and are left at their defaults rather than guessed at.
-    it('writes fetched, unchanged and failed only', async () => {
+    // M5.3 wrote only fetch-side counters, because the stages producing the rest did
+    // not exist. M5.4 supplies them through the JOB_PIPELINE seam — and with the seam
+    // unfilled they are zero because nothing ran, which is a fact rather than the
+    // guess the old default was.
+    it('writes every counter, with the stage counters zero and no pipeline', async () => {
       const { service, prisma } = harness(adapterYielding([job('a')]));
 
       await service.ingestSource('fixture-board');
 
-      const data = runUpdateData(prisma);
-      expect(data).toHaveProperty('fetched');
-      expect(data).toHaveProperty('unchanged');
-      expect(data).toHaveProperty('failed');
-      expect(data).not.toHaveProperty('created');
-      expect(data).not.toHaveProperty('updated');
-      expect(data).not.toHaveProperty('duplicates');
+      expect(runUpdateData(prisma)).toEqual(
+        expect.objectContaining({
+          fetched: 1,
+          unchanged: 0,
+          failed: 0,
+          created: 0,
+          updated: 0,
+          duplicates: 0,
+        }),
+      );
+    });
+
+    it('counts what the pipeline reported', async () => {
+      const process = jest.fn().mockResolvedValue({
+        postingId: 'p-1',
+        postingOutcome: 'CREATED',
+        jobId: 'j-1',
+        clusterOutcome: 'MATCHED',
+        classificationOutcome: 'CLASSIFIED',
+      });
+      const { service, prisma } = harness(adapterYielding([job('a')]), {
+        pipeline: { process },
+      });
+
+      await service.ingestSource('fixture-board');
+
+      expect(runUpdateData(prisma)).toEqual(
+        expect.objectContaining({ created: 1, updated: 0, duplicates: 1 }),
+      );
+    });
+
+    it('does not count an already-clustered posting as a duplicate', async () => {
+      // Otherwise the number would grow on every run until it just restated
+      // `fetched`. It counts discoveries, not postings that were seen before.
+      const process = jest.fn().mockResolvedValue({
+        postingId: 'p-1',
+        postingOutcome: 'UNCHANGED',
+        jobId: 'j-1',
+        clusterOutcome: 'ALREADY_CLUSTERED',
+        classificationOutcome: 'CACHED',
+      });
+      const { service, prisma } = harness(adapterYielding([job('a')]), {
+        pipeline: { process },
+      });
+
+      await service.ingestSource('fixture-board');
+
+      expect(runUpdateData(prisma)).toEqual(
+        expect.objectContaining({ created: 0, updated: 0, duplicates: 0 }),
+      );
     });
 
     it('closes the run with the injected clock', async () => {
@@ -455,6 +512,7 @@ describe('RawIngestionService', () => {
     const adapter: JobSourceAdapter = {
       descriptor: descriptor(),
       fetchJobs: fetchJobs,
+      toRawFields: () => ({ title: 'unused', companyName: 'unused' }),
     };
     const { service } = harness(adapter);
 
@@ -471,6 +529,219 @@ describe('RawIngestionService', () => {
     );
   });
 
+  describe('the seed walk (M5.4)', () => {
+    it('walks every seed inside one run', async () => {
+      const fetchJobs = jest.fn().mockImplementation(async function* () {
+        // no items
+      });
+      const adapter: JobSourceAdapter = {
+        descriptor: descriptor(),
+        fetchJobs: fetchJobs,
+        toRawFields: () => ({ title: 'unused', companyName: 'unused' }),
+      };
+      const { service, prisma } = harness(adapter);
+
+      await service.ingestSource('fixture-board', [
+        { query: 'junior developer', limit: 50 },
+        { query: 'graduate engineer', limit: 50 },
+      ]);
+
+      // One IngestionRun, three fetches. A run row per seed would report the same
+      // posting as new once per seed, since seeds overlap by design.
+      expect(fetchJobs).toHaveBeenCalledTimes(2);
+      expect(prisma.ingestionRun.create).toHaveBeenCalledTimes(1);
+      expect(prisma.ingestionRun.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('walks seeds in sequence, never in parallel', async () => {
+      const order: string[] = [];
+      const fetchJobs = jest
+        .fn()
+        .mockImplementation((params: { query?: string }) => {
+          order.push(`start:${params.query}`);
+          // eslint-disable-next-line require-yield
+          return (async function* (): AsyncIterable<RawJob> {
+            await Promise.resolve();
+            order.push(`end:${params.query}`);
+          })();
+        });
+      const adapter: JobSourceAdapter = {
+        descriptor: descriptor(),
+        fetchJobs: fetchJobs,
+        toRawFields: () => ({ title: 'unused', companyName: 'unused' }),
+      };
+      const { service } = harness(adapter);
+
+      await service.ingestSource('fixture-board', [
+        { query: 'a' },
+        { query: 'b' },
+      ]);
+
+      // Concurrency here would multiply the request rate the §7.3.3 limiter exists
+      // to hold down.
+      expect(order).toEqual(['start:a', 'end:a', 'start:b', 'end:b']);
+    });
+
+    it('accumulates counters across seeds', async () => {
+      const { service, prisma } = harness(
+        adapterYielding([job('a'), job('b')]),
+      );
+
+      await service.ingestSource('fixture-board', [
+        { query: 'a' },
+        { query: 'b' },
+      ]);
+
+      // The same two postings, fetched by both seeds. The second pass recognizes
+      // the stored payload by content hash and writes nothing.
+      const data = runUpdateData(prisma);
+      expect(data.fetched).toBe(4);
+      expect(data.failed).toBe(0);
+    });
+
+    it('abandons the remaining seeds on a stop condition', async () => {
+      const fetchJobs = jest.fn().mockImplementation(() =>
+        // eslint-disable-next-line require-yield
+        (async function* (): AsyncIterable<RawJob> {
+          await Promise.resolve();
+          throw new SourceRateLimitError('fixture-board');
+        })(),
+      );
+      const adapter: JobSourceAdapter = {
+        descriptor: descriptor(),
+        fetchJobs: fetchJobs,
+        toRawFields: () => ({ title: 'unused', companyName: 'unused' }),
+      };
+      const { service, prisma } = harness(adapter);
+
+      await service.ingestSource('fixture-board', [
+        { query: 'a' },
+        { query: 'b' },
+        { query: 'c' },
+      ]);
+
+      // Asking nine more times after a 429 is the retry storm §7.2 forbids.
+      expect(fetchJobs).toHaveBeenCalledTimes(1);
+      expect(runUpdateData(prisma).status).toBe(IngestionStatus.FAILED);
+    });
+
+    it('treats an empty seed list as one unfiltered walk', async () => {
+      const fetchJobs = jest.fn().mockImplementation(async function* () {
+        // no items
+      });
+      const adapter: JobSourceAdapter = {
+        descriptor: descriptor(),
+        fetchJobs: fetchJobs,
+        toRawFields: () => ({ title: 'unused', companyName: 'unused' }),
+      };
+      const { service } = harness(adapter);
+
+      await service.ingestSource('fixture-board', []);
+
+      // A successful run that fetched nothing is the hardest misconfiguration to
+      // notice in a log.
+      expect(fetchJobs).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('the pipeline seam (M5.4)', () => {
+    it('hands each stored posting to the pipeline, mapped by the adapter', async () => {
+      const process = jest.fn().mockResolvedValue({
+        postingId: 'p-1',
+        postingOutcome: 'CREATED',
+        jobId: 'j-1',
+        clusterOutcome: 'CREATED',
+        classificationOutcome: 'CLASSIFIED',
+      });
+      const { service } = harness(adapterYielding([job('a')]), {
+        pipeline: { process },
+      });
+
+      await service.ingestSource('fixture-board');
+
+      expect(process).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceId: SOURCE_ID,
+          externalId: 'a',
+          url: 'https://example.com/jobs/a',
+          // The one place a source-specific field is read, and it happened inside
+          // the adapter.
+          fields: { title: 'Title a', companyName: 'Scripted Co' },
+        }),
+      );
+    });
+
+    it('runs the pipeline for an unchanged payload too', async () => {
+      const process = jest.fn().mockResolvedValue({
+        postingId: 'p-1',
+        postingOutcome: 'UNCHANGED',
+        jobId: 'j-1',
+        clusterOutcome: 'ALREADY_CLUSTERED',
+        classificationOutcome: 'CACHED',
+      });
+      const { service, prisma } = harness(adapterYielding([job('a')]), {
+        pipeline: { process },
+      });
+      // Already stored: the raw stage writes no row for this one.
+      prisma.rawJobDocument.findUnique.mockResolvedValue({ id: 'raw-1' });
+
+      await service.ingestSource('fixture-board');
+
+      // M5.6 retires a posting by `lastSeenAt`, and only the stages stamp it.
+      expect(prisma.rawJobDocument.create).not.toHaveBeenCalled();
+      expect(process).toHaveBeenCalledTimes(1);
+    });
+
+    it('counts a pipeline failure as one failed item and carries on', async () => {
+      const process = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('normalization exploded'))
+        .mockResolvedValue({
+          postingId: 'p-2',
+          postingOutcome: 'CREATED',
+          jobId: 'j-2',
+          clusterOutcome: 'CREATED',
+          classificationOutcome: 'CLASSIFIED',
+        });
+      const { service, prisma } = harness(
+        adapterYielding([job('a'), job('b')]),
+        { pipeline: { process } },
+      );
+
+      const summary = await service.ingestSource('fixture-board');
+
+      expect(summary.outcome).toBe('COMPLETED');
+      expect(summary.failed).toBe(1);
+      expect(summary.created).toBe(1);
+      expect(runUpdateData(prisma).status).toBe(IngestionStatus.SUCCESS);
+    });
+
+    it('counts an unmappable payload as one failed item', async () => {
+      const process = jest.fn().mockResolvedValue({
+        postingId: 'p-2',
+        postingOutcome: 'CREATED',
+        jobId: 'j-2',
+        clusterOutcome: 'CREATED',
+        classificationOutcome: 'CLASSIFIED',
+      });
+      const adapter: JobSourceAdapter = {
+        ...adapterYielding([job('a'), job('b')]),
+        toRawFields: (payload: unknown) => {
+          if ((payload as { id?: string })?.id === 'a') {
+            throw new Error('payload has no title');
+          }
+          return { title: 'Title b', companyName: 'Scripted Co' };
+        },
+      };
+      const { service } = harness(adapter, { pipeline: { process } });
+
+      const summary = await service.ingestSource('fixture-board');
+
+      expect(summary.failed).toBe(1);
+      expect(process).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('gives the adapter an abort signal it can observe', async () => {
     const fetchJobs = jest.fn().mockImplementation(async function* () {
       // no items
@@ -478,6 +749,7 @@ describe('RawIngestionService', () => {
     const adapter: JobSourceAdapter = {
       descriptor: descriptor(),
       fetchJobs: fetchJobs,
+      toRawFields: () => ({ title: 'unused', companyName: 'unused' }),
     };
     const { service } = harness(adapter);
 

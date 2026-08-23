@@ -15,19 +15,31 @@ import type {
   SourceFetchParams,
 } from '../sources/source-adapter.types';
 import { SourceError } from '../sources/source-errors';
+import type {
+  JobPipelineService,
+  PipelineResult,
+} from './job-pipeline.service';
 import { contentHashOf } from './payload-canonicalization';
 import { StaleRunReaperService } from './stale-run-reaper.service';
-import { INGESTION_CLOCK } from './ingestion.tokens';
+import { INGESTION_CLOCK, JOB_PIPELINE } from './ingestion.tokens';
 
 /**
- * M5.3 — fetch a source and persist what came back, verbatim.
+ * M5.3/M5.4 — the run engine: fetch a source, persist what came back verbatim, and
+ * hand each posting to the downstream stages.
  *
- * This is deliberately **only** the raw stage: fetch → `RawJobDocument` → close out
- * the `IngestionRun`. Normalization, deduplication, classification and scoring are
- * M5.4's orchestration, which is blocked on the ingestion-plan question
- * (`ARCHITECTURE.md` §14.5) and is not pre-empted here. Splitting it this way means
- * the raw stage is provable now: the payloads land, the hashes dedupe, and the run
- * bookkeeping is correct, before any of the stages that consume them exist.
+ * It owns everything that is true of a *run* rather than of a posting: the
+ * `IngestionRun` row, the concurrency guard, the time budget, the seed walk, and the
+ * rule that one bad item never discards the ones already stored. What a posting
+ * becomes is `JobPipelineService`'s, reached through the {@link JOB_PIPELINE} seam —
+ * so this file has no idea that normalization, deduplication or classification
+ * exist, and M5.3's raw-only behaviour is still exactly what happens when the seam
+ * is unfilled.
+ *
+ * The seed walk (M5.4, `ARCHITECTURE.md` §6) is here rather than above this service
+ * because all of a source's seeds belong to **one** run: they overlap heavily by
+ * design, and a run row per seed would report the same posting as new ten times.
+ * Seeds are walked in sequence, never in parallel — concurrency here would multiply
+ * the request rate the §7.3.3 limiter exists to hold down.
  */
 
 export type RawIngestionOutcome =
@@ -46,7 +58,26 @@ export interface RawIngestionSummary {
   readonly failed: number;
   /** New `RawJobDocument` rows: `fetched - unchanged - failed`. */
   readonly stored: number;
+  /** Postings tier 1 inserted. Zero without a pipeline. */
+  readonly created: number;
+  /** Postings tier 1 rewrote — a content change or a reactivation. */
+  readonly updated: number;
+  /**
+   * Postings that joined an existing `Job` on this run (tiers 2 and 3).
+   *
+   * Not the same as "seen before": a posting that was already clustered keeps its
+   * cluster without any matching happening, and counting that would make the number
+   * grow on every run until it just restated `fetched`. This counts discoveries.
+   */
+  readonly duplicates: number;
   readonly errorMessage?: string;
+}
+
+/** The mutable half of the run counters the stages contribute to. */
+interface StageCounters {
+  created: number;
+  updated: number;
+  duplicates: number;
 }
 
 /** How long a single source's run may take before its budget aborts it. */
@@ -66,11 +97,22 @@ export class RawIngestionService {
     @Optional()
     @Inject(INGESTION_CLOCK)
     private readonly now: () => Date = () => new Date(),
+    @Optional()
+    @Inject(JOB_PIPELINE)
+    private readonly pipeline: JobPipelineService | null = null,
   ) {}
 
+  /**
+   * Runs one source end to end.
+   *
+   * `params` accepts a single set or a list of them — the list is the seed walk of
+   * §6, and one run covers all of them. A caller that passes neither gets one
+   * unfiltered walk, which is what the M5.3 specs and a smoke test want.
+   */
   async ingestSource(
     sourceKey: string,
-    params: Partial<SourceFetchParams> = {},
+    params:
+      Partial<SourceFetchParams> | readonly Partial<SourceFetchParams>[] = {},
     trigger: IngestionTrigger = IngestionTrigger.SCHEDULED,
   ): Promise<RawIngestionSummary> {
     const adapter = this.registry.require(sourceKey);
@@ -94,7 +136,15 @@ export class RawIngestionService {
       return this.skipped(sourceKey, 'SKIPPED_ALREADY_RUNNING');
     }
 
-    return this.executeRun(adapter, source, run.id, params);
+    const seeds = Array.isArray(params) ? params : [params];
+    // An empty list would produce a successful run that fetched nothing — the
+    // hardest kind of misconfiguration to notice in a log.
+    return this.executeRun(
+      adapter,
+      source,
+      run.id,
+      seeds.length > 0 ? seeds : [{}],
+    );
   }
 
   /**
@@ -151,7 +201,7 @@ export class RawIngestionService {
     adapter: JobSourceAdapter,
     source: JobSource,
     runId: string,
-    params: Partial<SourceFetchParams>,
+    seeds: readonly Partial<SourceFetchParams>[],
   ): Promise<RawIngestionSummary> {
     const sourceKey = adapter.descriptor.key;
     const controller = new AbortController();
@@ -165,46 +215,53 @@ export class RawIngestionService {
       logger: new Logger(`ingestion:${sourceKey}:${runId.slice(0, 8)}`),
     };
 
-    let fetched = 0;
-    let unchanged = 0;
-    let failed = 0;
+    const counts = {
+      fetched: 0,
+      unchanged: 0,
+      failed: 0,
+      created: 0,
+      updated: 0,
+      duplicates: 0,
+    };
     let runError: string | undefined;
 
     try {
-      const stream = adapter.fetchJobs(
-        {
-          query: params.query,
-          location: params.location,
-          since: params.since,
-          limit: params.limit ?? DEFAULT_ITEM_LIMIT,
-        },
-        ctx,
-      );
+      for (const seed of seeds) {
+        if (ctx.signal.aborted) {
+          ctx.logger.warn('Run budget exhausted; remaining seeds skipped');
+          break;
+        }
 
-      for await (const job of stream) {
-        fetched++;
-        try {
-          const wrote = await this.persist(
-            source,
-            adapter.descriptor,
-            runId,
-            job,
-          );
-          if (!wrote) {
-            unchanged++;
+        const stream = adapter.fetchJobs(
+          {
+            query: seed.query,
+            location: seed.location,
+            since: seed.since,
+            limit: seed.limit ?? DEFAULT_ITEM_LIMIT,
+          },
+          ctx,
+        );
+
+        for await (const job of stream) {
+          counts.fetched++;
+          try {
+            await this.processItem(adapter, source, runId, job, counts);
+          } catch (error) {
+            // Item-level: one unusable posting must not discard the ones already
+            // stored, so it is counted and the walk continues.
+            counts.failed++;
+            ctx.logger.warn(
+              `Item ${job?.externalId ?? '<no id>'} failed: ${this.messageOf(error)}`,
+            );
           }
-        } catch (error) {
-          // Item-level: one unusable posting must not discard the ones already
-          // stored, so it is counted and the walk continues.
-          failed++;
-          ctx.logger.warn(
-            `Item ${job?.externalId ?? '<no id>'} failed: ${this.messageOf(error)}`,
-          );
         }
       }
     } catch (error) {
       // Run-level. Everything persisted so far stays persisted — the counts below
-      // describe what actually happened, not what was attempted.
+      // describe what actually happened, not what was attempted. The remaining
+      // seeds are abandoned on purpose: a stop condition such as a 429 means stop
+      // asking this source, and asking it nine more times would be the retry storm
+      // §7.2 forbids.
       runError = this.messageOf(error);
       if (error instanceof SourceError && error.terminatesRun) {
         ctx.logger.error(`Run ended by a stop condition: ${runError}`);
@@ -215,6 +272,7 @@ export class RawIngestionService {
       clearTimeout(budget);
     }
 
+    const { fetched, unchanged, failed, created, updated, duplicates } = counts;
     const stored = fetched - unchanged - failed;
     await this.prisma.ingestionRun.update({
       where: { id: runId },
@@ -227,13 +285,19 @@ export class RawIngestionService {
         fetched,
         unchanged,
         failed,
+        // Zero without a pipeline, which is M5.3's raw-only shape rather than a
+        // guess: no stage ran, so nothing was created, updated or matched.
+        created,
+        updated,
+        duplicates,
         errorMessage: runError ? runError.slice(0, 1000) : null,
       },
     });
 
     this.logger.log(
       `[${sourceKey}] run ${runId.slice(0, 8)} ${runError ? 'FAILED' : 'SUCCESS'} — ` +
-        `fetched=${fetched} stored=${stored} unchanged=${unchanged} failed=${failed}`,
+        `fetched=${fetched} stored=${stored} unchanged=${unchanged} failed=${failed} ` +
+        `created=${created} updated=${updated} duplicates=${duplicates}`,
     );
 
     return {
@@ -244,8 +308,70 @@ export class RawIngestionService {
       unchanged,
       failed,
       stored,
+      created,
+      updated,
+      duplicates,
       errorMessage: runError,
     };
+  }
+
+  /**
+   * One fetched posting: the raw write, then the stages.
+   *
+   * The stages run for **every** item, including one whose payload was
+   * byte-identical to the stored copy. `JobPosting` and `Job` are retired by
+   * `lastSeenAt` (M5.6, `DATABASE.md` §8), and a posting the source is still
+   * listing has been seen whether or not its text moved — skipping the unchanged
+   * case would retire everything nobody edits. The stages recognize that case
+   * themselves, and it costs a timestamp and a cached lookup.
+   *
+   * Throws for the caller's item-level handler. Both halves are deliberately inside
+   * that one boundary: a posting whose raw document stored but whose normalization
+   * threw is one failed item, not a half-successful one.
+   */
+  private async processItem(
+    adapter: JobSourceAdapter,
+    source: JobSource,
+    runId: string,
+    job: RawJob,
+    counts: StageCounters & { unchanged: number },
+  ): Promise<void> {
+    const wrote = await this.persist(source, adapter.descriptor, runId, job);
+    if (!wrote) {
+      counts.unchanged++;
+    }
+
+    if (!this.pipeline) {
+      return;
+    }
+
+    const result = await this.pipeline.process({
+      sourceId: source.id,
+      externalId: job.externalId,
+      url: job.url,
+      // The one call that reads a source-specific field, and it happens inside the
+      // adapter (§4.2). A payload this adapter cannot map throws, and the item is
+      // counted as failed like any other.
+      fields: adapter.toRawFields(job.payload),
+      postedAt: job.postedAt ?? null,
+    });
+
+    this.tally(result, counts);
+  }
+
+  /** Pipeline outcomes to the run's stage counters. */
+  private tally(result: PipelineResult, counts: StageCounters): void {
+    if (result.postingOutcome === 'CREATED') {
+      counts.created++;
+    } else if (result.postingOutcome === 'UPDATED') {
+      counts.updated++;
+    }
+    if (
+      result.clusterOutcome === 'MATCHED' ||
+      result.clusterOutcome === 'FUZZY_MATCHED'
+    ) {
+      counts.duplicates++;
+    }
   }
 
   /**
@@ -327,6 +453,9 @@ export class RawIngestionService {
       unchanged: 0,
       failed: 0,
       stored: 0,
+      created: 0,
+      updated: 0,
+      duplicates: 0,
     };
   }
 

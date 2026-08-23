@@ -356,6 +356,7 @@ Every integration implements one interface:
 export interface JobSourceAdapter {
   readonly descriptor: SourceDescriptor;
   fetchJobs(params: SourceFetchParams, ctx: FetchContext): AsyncIterable<RawJob>;
+  toRawFields(payload: unknown): RawJobFields;   // the only method that may name a source's own fields
 }
 
 export interface SourceFetchParams {
@@ -378,6 +379,17 @@ export interface RawJob {
   postedAt?: Date;      // only when the source states it — enables the `since` early-stop
 }
 ```
+
+`toRawFields` is how a payload becomes normalization's input (added by M5.4).
+`RawJob.payload` is `unknown` and §4.2 lets only `sources/` read a source-specific
+field name, so the translation into the shared vocabulary — title, company,
+location, description, the declared workplace and employment types, language,
+`postedAt` — has to happen inside the adapter. It is deliberately a **pure function
+of a stored payload** rather than a property of a fetch, so a future
+re-normalization can replay `RawJobDocument` rows without contacting the source
+again (`DATABASE.md` §6). Every value it returns is *what the source said*, not a
+decision: the text may still be markup, and the two enum fields are evidence that
+outranks the description without being the answer (§6.2).
 
 `fetchJobs` returns an **`AsyncIterable`, not a `Promise<RawJob[]>`**. Returning an
 array would force every adapter to run its own pagination loop and hold a full
@@ -423,8 +435,8 @@ interface offers.
 
 ### 6.2 Normalization
 
-`NormalizationService` converts a source-specific payload into a `JobPosting`
-shape. Responsibilities:
+The normalization stage converts an adapter's `RawJobFields` (§6.1) into a
+`JobPosting` shape. Responsibilities:
 
 - HTML → plain text (strip markup, preserve paragraph and list breaks)
 - Whitespace and unicode normalization

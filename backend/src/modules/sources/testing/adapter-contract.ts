@@ -150,6 +150,43 @@ export function describeAdapterContract(
       expect(items.length).toBeLessThanOrEqual(1);
     });
 
+    it('maps every yielded payload into the shared vocabulary', async () => {
+      const ctx = contextFor(name);
+      const adapter = create();
+      const items = await collect(adapter, { limit: 100 }, ctx);
+
+      for (const job of items) {
+        const fields = adapter.toRawFields(job.payload);
+
+        // Tier 1 rejects a posting with no title and tiers 2/3 have nothing to
+        // match on without one, so an adapter that cannot produce one must throw
+        // rather than return a blank.
+        expect(typeof fields.title).toBe('string');
+        expect(fields.title.trim().length).toBeGreaterThan(0);
+        expect(typeof fields.companyName).toBe('string');
+        if (fields.postedAt != null) {
+          expect(fields.postedAt).toBeInstanceOf(Date);
+          expect(Number.isNaN(fields.postedAt.getTime())).toBe(false);
+        }
+      }
+    });
+
+    it('maps payloads without contacting the source', async () => {
+      const ctx = contextFor(name);
+      const adapter = create();
+      const items = await collect(adapter, { limit: 3 }, ctx);
+      expect(items.length).toBeGreaterThan(0);
+
+      // Pure and synchronous is the property that lets a future re-normalization
+      // replay stored RawJobDocument payloads (DATABASE.md §6). A mapping that
+      // returned a promise, or reached for a connection, would not.
+      for (const job of items) {
+        const first = adapter.toRawFields(job.payload);
+        expect(first).not.toBeInstanceOf(Promise);
+        expect(adapter.toRawFields(job.payload)).toEqual(first);
+      }
+    });
+
     it('produces a stable result for the same input', async () => {
       const first = await collect(create(), { limit: 5 }, contextFor(name));
       const second = await collect(create(), { limit: 5 }, contextFor(name));

@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import type {
   JobSourceAdapter,
   RawJob,
+  RawJobFields,
   SourceDescriptor,
 } from './source-adapter.types';
 import { SOURCE_ADAPTERS } from './source-adapters.token';
@@ -30,6 +31,14 @@ class StubAdapter implements JobSourceAdapter {
   // iterate, and the contract suite covers streaming.
   async *fetchJobs(): AsyncIterable<RawJob> {
     // intentionally empty
+  }
+
+  /**
+   * Never called here — these cases are about registration, not mapping. Present
+   * because `JobSourceAdapter` requires it (M5.4).
+   */
+  toRawFields(): RawJobFields {
+    return { title: 'stub', companyName: 'stub' };
   }
 }
 

@@ -22,12 +22,14 @@
  * only" so no row in `JobSource` can be mistaken for a reviewed source.
  */
 import { Injectable } from '@nestjs/common';
+import { EmploymentType, WorkplaceType } from '@prisma/client';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { PaginatedSourceAdapter } from '../../paginated-source.adapter';
 import type {
   FetchContext,
   RawJob,
+  RawJobFields,
   SourceDescriptor,
   SourcePage,
   SourcePageRequest,
@@ -148,6 +150,46 @@ export class FixtureSourceAdapter extends PaginatedSourceAdapter {
     return this.cache;
   }
 
+  /**
+   * The fixture file's field names, and the only place in the application they may
+   * be read (§4.2). Everything downstream sees `RawJobFields`.
+   *
+   * The two enums are validated against the Prisma enum rather than cast: a fixture
+   * typo would otherwise reach `JobPosting.workplaceType` as an invalid value and
+   * fail at the write, far from the file that caused it. An unrecognized value is
+   * dropped to `null`, which means "the source stated nothing" — and M6.3's
+   * detectors then read the text, which is the better answer anyway.
+   */
+  toRawFields(payload: unknown): RawJobFields {
+    const entry = (payload ?? {}) as FixtureJob;
+
+    const title = asText(entry.title);
+    if (!title) {
+      // Thrown, not degraded: the orchestrator counts it as an item failure. A
+      // posting with no title cannot be clustered by tiers 2/3 at all.
+      throw new SourceProtocolError(
+        this.descriptor.key,
+        `Fixture entry ${asText(entry.id) || '<no id>'} has no title`,
+      );
+    }
+
+    const postedAt =
+      typeof entry.postedAt === 'string' ? new Date(entry.postedAt) : null;
+
+    return {
+      title,
+      companyName: asText(entry.company),
+      location: asText(entry.location) || null,
+      description: asText(entry.description) || null,
+      // The fixture file calls it "workplace"; the shared vocabulary calls it
+      // `workplaceType`. Translating that is precisely this method's job.
+      workplaceType: asEnum(entry.workplace, WorkplaceType),
+      employmentType: asEnum(entry.employmentType, EmploymentType),
+      language: asText(entry.language) || null,
+      postedAt: postedAt && !Number.isNaN(postedAt.getTime()) ? postedAt : null,
+    };
+  }
+
   /** Returns undefined for an entry that cannot become a valid RawJob. */
   private toRawJob(entry: FixtureJob): RawJob | undefined {
     if (!entry || typeof entry.id !== 'string' || entry.id.length === 0) {
@@ -169,4 +211,25 @@ export class FixtureSourceAdapter extends PaginatedSourceAdapter {
         postedAt && !Number.isNaN(postedAt.getTime()) ? postedAt : undefined,
     };
   }
+}
+
+/** A payload value as a trimmed string; `''` for anything that is not one. */
+function asText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+/**
+ * A payload value as a member of a Prisma enum, or null. Membership is checked
+ * against the enum object, so the accepted set follows the schema rather than a
+ * list here that would drift from it.
+ */
+function asEnum<T extends Record<string, string>>(
+  value: unknown,
+  members: T,
+): T[keyof T] | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const upper = value.trim().toUpperCase();
+  return Object.values(members).includes(upper) ? (upper as T[keyof T]) : null;
 }
