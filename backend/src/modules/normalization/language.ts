@@ -273,17 +273,12 @@ export function detectLanguage(
 /**
  * The PostgreSQL text-search configuration for a stored `language`.
  *
- * This mirrors the `CASE` expression inside the `Job.searchVector` generated column
- * by hand, and it has to: a query built with `to_tsquery('english', …)` against a
- * vector built with `german` matches almost nothing, and the mismatch is silent. The
- * argument is a plain string because it arrives from the database column, which is
- * `char(2)` and carries no narrower type.
+ * Re-exported rather than defined here: M9.1's search repository needs the same
+ * mapping and `ARCHITECTURE.md` §4.3 forbids the read side importing a pipeline
+ * module, so it moved to `common/utils` alongside `ascii-fold`. This export stays
+ * because the language stage is where a caller expects to find it.
  */
-export function textSearchConfiguration(
-  language: string,
-): 'english' | 'german' {
-  return language.trim().toLowerCase() === 'de' ? 'german' : 'english';
-}
+export { textSearchConfiguration } from '../../common/utils/text-search-configuration';
 
 /** Exported for the disjointness test only. */
 export const STOPWORD_SETS = {

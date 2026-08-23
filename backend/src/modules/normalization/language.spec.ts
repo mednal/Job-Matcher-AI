@@ -1,12 +1,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { SEED_JOBS } from '../../../prisma/seed-data';
-import {
-  DEFAULT_LANGUAGE,
-  STOPWORD_SETS,
-  detectLanguage,
-  textSearchConfiguration,
-} from './language';
+import { DEFAULT_LANGUAGE, STOPWORD_SETS, detectLanguage } from './language';
 
 const FIXTURE_DIR = join(__dirname, '__fixtures__');
 
@@ -164,20 +159,5 @@ describe('detectLanguage', () => {
       STOPWORD_SETS.en.has(word),
     );
     expect(shared).toEqual([]);
-  });
-});
-
-describe('textSearchConfiguration', () => {
-  it('mirrors the CASE expression in the searchVector generated column', () => {
-    // migration 20260821190950: 'de' -> german, everything else -> english.
-    expect(textSearchConfiguration('de')).toBe('german');
-    expect(textSearchConfiguration('en')).toBe('english');
-    expect(textSearchConfiguration('fr')).toBe('english');
-    expect(textSearchConfiguration('')).toBe('english');
-  });
-
-  it('tolerates the padding a char(2) column can hand back', () => {
-    expect(textSearchConfiguration('DE')).toBe('german');
-    expect(textSearchConfiguration('de ')).toBe('german');
   });
 });

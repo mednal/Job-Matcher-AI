@@ -39,7 +39,7 @@ As of the last update to this file:
 | Product / architecture / database design | Written (`PRODUCT.md`, `ARCHITECTURE.md`, `DATABASE.md`). D1–D7 closed; D7 **revised 2026-08-21** to exclude salary, company entities, job taxonomy, and application tracking from the MVP schema (`DATABASE.md` §3.4) |
 | Source adapter architecture | Designed and approved 2026-08-21 (`ARCHITECTURE.md` §6.1, Phase 5 decisions A1–A7). **M5.1–M5.3 implemented 2026-08-22**: `modules/sources/` holds the `JobSourceAdapter` contract, the `SOURCE_ADAPTERS` token, `SourceRegistryService` (descriptors validated at construction, so an invalid or duplicated one aborts boot), the `PaginatedSourceAdapter` base that owns pagination, the `SourceError` hierarchy, the shared `SourceHttpClient` (truthful User-Agent, per-source rate limiting, 5xx/network-only retries, 401/403/429 and block pages as stop conditions), the `describeAdapterContract` conformance suite, and `FixtureSourceAdapter`; `modules/ingestion/` holds M5.3's raw stage — content-hashed `RawJobDocument` writes, canonicalization with `volatilePayloadPaths`, `IngestionRun` bookkeeping, the `RUNNING` guard and the stale-run reaper. `sources.imports.spec.ts` enforces the §4.2 and §7.3 boundaries mechanically. **M5.4 implemented 2026-08-23**, closing the sequencing decision: `JobSourceAdapter` gained `toRawFields`, the payload-to-shared-vocabulary mapping that §4.2 allows only an adapter to perform; `ingestion-plan.ts` holds §6's seeds; `IngestionService` resolves the plan and isolates one source's failure from the next; `JobPipelineService` chains normalize → dedupe → classify → score for one posting; and `RawIngestionService` gained the seed walk and the `JOB_PIPELINE` seam. M5.5–M5.6 follow it. `docs/SOURCES.md` still records **no reviewed sources** — the fixture adapter is not one, and the register now says so explicitly |
 | Angular workspace | Scaffolded only — default welcome page, no routes, no app code |
-| NestJS backend | Config, validation pipe, CORS, `/api/v1/health` (now `@Public()`), plus a working `AuthModule` and `UsersModule`: register, login, argon2id hashing, JWT access tokens, refresh-token rotation/revocation, logout, a global `JwtAuthGuard`, and `GET /users/me`. M3.5/M3.6 close Phase 3: a second global `RolesGuard` with a `@Roles()` decorator (metadata opt-in, role read from the database rather than the token so a demotion takes effect immediately) and a `ProfilesModule` serving `GET`/`PUT /profiles/me` (`PUT` replaces rather than merges; a user who has never saved one gets an empty profile, not a 404; ownership is structural because no route names a profile by id). **Phase 3 is complete.** No admin route exists yet to point `RolesGuard` at — the first is M5.5's ingestion trigger — so its e2e declares a test-only `@Roles(ADMIN)` controller, keeping D4's "no admin surface" intact. M4.1/M4.2 add `JobsModule`: `GET /jobs/:id` (detail with classification evidence, every source URL and its attribution, resolving `mergedIntoJobId` through a redirect) and `GET /jobs` (the `{ items, page, pageSize, total }` envelope, `pageSize` ≤ 50, inactive and merged jobs excluded), both public, plus the shared pagination DTOs in `common/dto/`. **Phase 4 is complete** — the read side serves the seeded jobs, so Phase 11 is unblocked. |
+| NestJS backend | Config, validation pipe, CORS, `/api/v1/health` (now `@Public()`), plus a working `AuthModule` and `UsersModule`: register, login, argon2id hashing, JWT access tokens, refresh-token rotation/revocation, logout, a global `JwtAuthGuard`, and `GET /users/me`. M3.5/M3.6 close Phase 3: a second global `RolesGuard` with a `@Roles()` decorator (metadata opt-in, role read from the database rather than the token so a demotion takes effect immediately) and a `ProfilesModule` serving `GET`/`PUT /profiles/me` (`PUT` replaces rather than merges; a user who has never saved one gets an empty profile, not a 404; ownership is structural because no route names a profile by id). **Phase 3 is complete.** No admin route exists yet to point `RolesGuard` at — the first is M5.5's ingestion trigger — so its e2e declares a test-only `@Roles(ADMIN)` controller, keeping D4's "no admin surface" intact. M4.1/M4.2 add `JobsModule`: `GET /jobs/:id` (detail with classification evidence, every source URL and its attribution, resolving `mergedIntoJobId` through a redirect) and `GET /jobs` (the `{ items, page, pageSize, total }` envelope, `pageSize` ≤ 50, inactive and merged jobs excluded), both public, plus the shared pagination DTOs in `common/dto/`. **Phase 4 is complete** — the read side serves the seeded jobs, so Phase 11 is unblocked. **M9.1 opens Phase 9**: `SearchModule` serves `GET /jobs/search` (public), with `search.repository.ts` holding the only raw SQL on the read side — a `websearch_to_tsquery` against `Job.searchVector` built through the *same* per-row `CASE` on `language` the generated column was written with, ranked by `ts_rank` over the write-time A/B/C weights and paged in the shared envelope. `textSearchConfiguration` moved from `normalization/language.ts` to `common/utils/` (the `ascii-fold` precedent) so the read side does not import a pipeline module, and a unit test reads M2.6's migration to catch drift. **M9.2 adds the nine filters of §8.1** — `technologies[]` (GIN overlap, so a second chip widens), `locations[]` (case-insensitive substring, ORed, wildcards escaped), `countryCode`, `workplaceType[]`, `employmentType[]`, `juniorLevel[]` (enum `IN` with the cast on the parameters so the level index survives), `minJuniorScore`, `maxYearsRequired` and `postedWithinDays` — each a separate `Prisma.Sql` fragment ANDed onto the structural exclusion, so an unrequested filter contributes no SQL. A `NULL` column is answered two different ways on purpose: `maxYearsRequired` keeps a job that states no minimum (absence of a barrier) while `minJuniorScore` and the enum facets drop one that states nothing (absence of evidence). Comma-splitting is allowed only for slugs and enum members, never for free-text locations. **M9.3 closes the ordering**: `sort` accepts `relevance` (the default), `juniorScore` (`NULLS LAST`, or the highest scores would open with the unscored) and `postedAt`, each ending in M4.2's `effectivePostedAt DESC, id DESC` total order; `relevance` blends text rank, `juniorScore/100` and a 30-day recency half-life at `0.5/0.35/0.15`, tuned in M12.3. `PRODUCT.md` §8's default result set hides `EXPERIENCED` and `CLEARLY_EXPERIENCED`, with naming a level in `juniorLevel[]` as the opt-in and an explicit `IS NULL` branch so an unclassified job is not silently dropped by three-valued logic. Profile-fit is M9.5 and is still rejected, not ignored |
 | PostgreSQL / Prisma | Postgres 18 runs in Docker on host port 5433. `prisma/schema.prisma` now holds `User`, `Profile`, `RefreshToken`, `UserRole`, `WorkplaceType` (M2.2's slice, migration `20260821171157_add_user_auth_tables`) plus `JobSource`, `IngestionRun`, `RawJobDocument`, `AccessMethod`, `IngestionStatus`, `IngestionTrigger` (M2.3's slice, migration `20260821180642_add_source_ingestion_tables`) plus `JobPosting`, `Job` and `EmploymentType` (M2.4's slice, migration `20260821182202_add_job_tables`) plus `JobClassification`, `SavedJob`, `JuniorLevel` and `Job`'s denormalized classification block (M2.5's slice, migration `20260821184731_add_classification_saved_job_tables`, which also hand-writes the partial unique index enforcing one current classification per job). Every MVP table of `DATABASE.md` §3 now exists. M2.6's slice (migration `20260821190950_add_search_indexes_and_checks`, commit `f3cb483`) adds the raw SQL of §5: the `pg_trgm` extension, the generated `Job.searchVector` column, GIN indexes on `searchVector`, `technologies` and `normalizedTitle` (trigram), the partial `Job_active_search_idx`, and all four CHECK constraints — so §7's index inventory is 25/25 complete. The three GIN indexes are also declared in `schema.prisma` purely to stop Prisma proposing to drop them; see M2.6's fragile-point note before running `prisma migrate dev`. M2.7 closes Phase 2: `prisma/seed.ts` + `prisma/seed-data.ts`, run with `npm run db:seed`, write a demo user, a demo admin, two fixture sources and 10 fixture jobs with one classification each, idempotently. **Phase 2 is complete.** |
 | Development fixtures | Seeded (M2.7). 10 jobs covering all five `JuniorLevel` bands, English and German, the adversarial "Junior title / 5+ years body" case, a two-source job, an inactive job and a merged-away job. Hand-written, not classifier output — stamped `classifierVersion = "seed-fixture-1.0"`. This is the corpus Phases 6–8 should be checked against |
 | Normalization | **M6.1 implemented 2026-08-22**: `modules/normalization/` holds the text stage — `htmlToPlainText` (markup to plain text preserving paragraph and list breaks, non-prose elements dropped with their content, entities decoded last) and `normalizePlainText` (NFKC, invisible and control characters removed, whitespace and bullet markers folded, idempotent), behind an injectable `TextNormalizationService` with a three-pair fixture corpus. **M6.2 implemented 2026-08-22**: `company-slug.ts` (`toCompanySlug` — German-style ASCII folding so `Müller`/`Mueller`/`Muller` are one slug, joining punctuation deleted, trailing legal forms stripped repeatedly and only at the end, a name that is *only* a legal form kept intact), `location.ts` (`parseLocation` — free text into a display `location` plus an ISO alpha-2 `countryCode` from a curated English/German alias table, with **no city-to-country inference**, since `countryCode` feeds `dedupHash` and tier 3 covers the resulting split while nothing covers a false merge), the shared `ascii-fold.ts` (moved to `common/utils/` by M7.2, which needs the same folding and may not import this module), and `CompanyLocationService` — pinned by spec against both the fixture payloads and the seeded slugs. **M6.3 implemented 2026-08-22**: `phrase-match.ts` (ASCII-folded, token-aligned phrase matching with a three-token negation window), `workplace-type.ts` (REMOTE/HYBRID/ONSITE in English and German, title and location consulted before the description, remote-plus-onsite evidence resolving to HYBRID), `employment-type.ts` (the five-member enum, narrower arrangement winning so a Werkstudent posting is not recorded as PART_TIME), `technologies.ts` (a curated closed dictionary with its own symbol-aware boundaries, so `c#`, `.net` and `node.js` survive matching that `java` inside `javascript` does not), and `JobAttributesService`. Both detectors accept a `declared` value the adapter layer has already mapped to the enum, which wins over the text; `null` stays a real answer for both columns. **M6.4 implemented 2026-08-22**: `language.ts` (`detectLanguage` — stopword-frequency scoring over two deliberately disjoint English/German function-word sets, a supported `declared` code winning outright, English as the fallback for ties, unsupported codes and evidence-free input, and a floor of two German hits so one stray token cannot re-stem a description) plus `textSearchConfiguration`, which mirrors the `CASE` in the `searchVector` generated column by hand and is what M9.1 must build its `tsquery` through. Pinned against all ten seeded jobs and the three M6.1 HTML fixtures. **Phase 6 is complete.** `NormalizationModule` is imported by `IngestionModule` as of M5.4 |
@@ -1936,24 +1936,160 @@ calls it once deduplication has decided which `Job` a posting belongs to.
 Goal: `GET /jobs/search` answers "show me jobs I should realistically consider".
 
 ### M9.1 — Full-text search
-- [ ] `search.repository.ts` — the only place raw SQL lives
-- [ ] Queries select the same text-search configuration the write side used
-- [ ] `q` matches title (weight A), company (B), description (C)
+- [x] `search.repository.ts` — the only place raw SQL lives
+- [x] Queries select the same text-search configuration the write side used
+- [x] `q` matches title (weight A), company (B), description (C)
 - Verify: an integration test finds a German posting with a German query; the
   configuration-mismatch case is covered.
+- Verified 2026-08-23: `modules/search/` (`search.repository.ts`,
+  `search.service.ts`, `search.controller.ts`, `dto/search.query.ts`) serving
+  `GET /jobs/search`, plus `test/search.e2e-spec.ts` — 17 integration cases
+  against the real database.
+  - **The configuration is derived per row, in SQL.** The write side's
+    `searchVector` is a generated column whose `CASE` picks `german` when
+    `language = 'de'` and `english` otherwise, so the query side does the same
+    inside `websearch_to_tsquery`. It cannot be a configuration chosen once in
+    TypeScript: **one result set spans both languages**, and only the database
+    knows which row is which before the query runs.
+  - **The mismatch was made expensive to get wrong, twice.** The e2e asserts both
+    directions against the column directly — a German posting matches
+    `'Bewerbung'` under `german` and matches *nothing* under `english`
+    ("Bewerbungen" indexes as `bewerb`); an English one matches `'developing'`
+    under `english` and nothing under `german`. That is the failure this design
+    exists to prevent: it does not raise, it just returns fewer jobs.
+    Mutation-checked — forcing the fragment to `english` failed exactly the two
+    German cases and the drift guard, nothing else.
+  - **`textSearchConfiguration` moved to `common/utils/`.** M6.4 had put it in
+    `normalization/language.ts`, but §4.3 forbids the read side importing a
+    pipeline module — the same bind that moved `ascii-fold.ts` in M7.2. It now
+    sits beside it, carrying both the TypeScript mapping and
+    `TEXT_SEARCH_CONFIGURATION_SQL`; `language.ts` re-exports it, so nothing that
+    already imported it changed. A **unit** test reads M2.6's migration file and
+    fails if the fragment and the generated column ever diverge, so drift is
+    caught before anything reaches Postgres.
+  - **`websearch_to_tsquery`, not `to_tsquery`**: it accepts what a user types —
+    quoted phrases, `or`, a leading `-` — and never throws on punctuation, so a
+    stray `&` is a search and not a 500. A query of only stopwords parses to an
+    empty `tsquery` and matches nothing, which is the honest answer; matching
+    everything would look like a search that ignores what was typed.
+  - **The A/B/C weights are not restated by the query.** `setweight` baked them
+    into the vector at write time, so plain `ts_rank` already ranks a title hit
+    above a description hit — asserted by relative position, not by score.
+    Normalization `32` puts every rank in `[0,1)` so M9.3 can blend it with the
+    junior score and recency. The rank orders the page and is **never** in the
+    response: it is only comparable within one result set.
+  - **`SearchModule` is imported before `JobsModule`** in `AppModule`. Nest
+    registers routes in module order and `/jobs/:id` is parsed by
+    `ParseUUIDPipe`, which would reject the literal `search` with a 400 and make
+    the endpoint unreachable. An e2e case asserts the route is not swallowed.
+  - Scope held to M9.1: no filters, no `sort`, no profile-fit. Until M9.2 lands,
+    `forbidNonWhitelisted` **rejects** a filter param rather than ignoring it — a
+    filter the backend silently drops returns jobs the user excluded.
 
 ### M9.2 — Filters
-- [ ] `technologies[]`, `locations[]`, `countryCode`, `workplaceType[]`,
+- [x] `technologies[]`, `locations[]`, `countryCode`, `workplaceType[]`,
       `employmentType[]`, `juniorLevel[]`, `minJuniorScore`, `maxYearsRequired`,
       `postedWithinDays`
-- [ ] No salary filter — salary is not in the MVP schema at all (D7)
+- [x] No salary filter — salary is not in the MVP schema at all (D7)
 - Verify: integration tests per filter, plus a combined-filter case.
+- Verified 2026-08-23: all nine parameters on `SearchQuery`, composed into SQL by
+  `SearchRepository.filters`, with 18 new `test/search.e2e-spec.ts` cases — one per
+  filter, a combined one, and a contradictory one — plus 17 new unit cases across
+  `search.query.spec.ts` and `search.service.spec.ts`. 39 unit and 39 e2e cases
+  pass in the search module.
+  - **A `NULL` column is answered differently by two filters, on purpose.**
+    `maxYearsRequired` *keeps* a job stating no minimum — an unstated requirement
+    is the absence of a barrier, and dropping those rows would hide most of the
+    genuinely junior postings this product exists to surface. `minJuniorScore`
+    *drops* an unclassified job — there the absent value is absence of evidence,
+    and "at least 70" cannot be answered by a job nothing has scored. The enum
+    facets side with the score: a posting that never said it was remote is not an
+    answer to `workplaceType=REMOTE`. Both directions are pinned by their own e2e
+    case against a deliberately unclassified fixture; mutation-checked by removing
+    the `IS NULL` branch, which failed exactly two cases.
+  - **`technologies[]` is overlap (`&&`), not containment (`@>`)** — a second chip
+    widens the result set, which is how a facet panel reads. Containment would
+    make almost every two-technology filter empty; mutation-checked, and it fails
+    the widening case. `Job_technologies_idx` (GIN) supports `&&` directly.
+  - **Comma-splitting is allowed only where a comma cannot be part of a value.**
+    Enum members and technology slugs split, because `?technologies=java,kotlin`
+    read as one literal slug returns zero results with nothing to explain why.
+    `locations` never splits — "Berlin, Germany" is one place. Enum members are
+    also read case-insensitively: the set is closed, so casing carries no
+    information and a 400 on `remote` teaches the client nothing.
+  - **`%` and `_` in a location are escaped before they reach `ILIKE`.** Unescaped,
+    `locations=%` matches every job that has a location — a filter returning *more*
+    than it named, which is worse than one returning nothing. Mutation-checked.
+  - **The enum casts are on the parameters, not the column.**
+    `"Job"."juniorLevel"::text IN (…)` would have forfeited
+    `Job_juniorLevel_effectivePostedAt_idx` — the index this filter exists to use —
+    so each value is bound and cast individually to its PostgreSQL enum type. The
+    type name is the only literal, and it is a constant in the repository.
+  - **An empty parameter is not a filter.** `?technologies=` is a user who selected
+    no chips; the DTO drops empty entries and the service collapses "absent" and
+    "present but empty" into one answer, so it cannot become a predicate no job
+    satisfies.
+  - **An unknown technology slug narrows to nothing rather than 400ing.** Validating
+    against the dictionary would mean the read side importing `normalization/`,
+    which §4.3 forbids — the same bind that moved `textSearchConfiguration` in
+    M9.1. A facet value that has gone out of use should return no jobs, not break
+    the request.
+  - Filters can only narrow: the structural exclusion of merged and deactivated
+    jobs is a separate fragment ANDed ahead of them, asserted by its own case.
+    `sort` (M9.3) and profile-fit (M9.5) are still **rejected** rather than ignored.
 
 ### M9.3 — Sorting and default result set
-- [ ] `sort` accepts `relevance`, `juniorScore`, `postedAt`
-- [ ] `relevance` blends text rank, junior score, and recency
-- [ ] The default excludes `CLEARLY_EXPERIENCED`, and `EXPERIENCED` unless opted in
+- [x] `sort` accepts `relevance`, `juniorScore`, `postedAt`
+- [x] `relevance` blends text rank, junior score, and recency
+- [x] The default excludes `CLEARLY_EXPERIENCED`, and `EXPERIENCED` unless opted in
 - Verify: an integration test shows the default result set omits both bands.
+- Verified 2026-08-23: `SearchSort` on the DTO, `SearchRepository.orderBy` and
+  `.relevance`, and the default-band predicate inside `filters`. 17 new e2e cases
+  (56 in the suite) and 10 new unit cases (49 in the module); the full backend is
+  1027 unit and 186 e2e.
+  - **Naming a level in `juniorLevel[]` *is* the opt-in.** §8.1's parameter list is
+    closed and this milestone did not invent an `includeExperienced` alongside it.
+    An explicit request is answered — a filter the backend *overrides* is the same
+    failure as one it ignores — so `juniorLevel=EXPERIENCED` returns those jobs
+    and sending no level leaves the product default in force.
+  - **`NULL NOT IN (…)` is `NULL`, not `TRUE`.** Written the obvious way, the
+    default predicate would have dropped every unclassified job out of the default
+    view — silently, and only for jobs the pipeline had not reached. The `IS NULL`
+    branch is spelled out and has its own e2e case; mutation-checked by removing
+    it, which failed four cases. A job nothing has classified is not *known* to be
+    experienced, so it stays.
+  - **`NULLS LAST` on the `juniorScore` sort.** PostgreSQL sorts NULLs first under
+    `DESC`, so without it "highest junior score first" would have opened with every
+    job that has no score at all. Mutation-checked.
+  - **The blend's weights are `0.5 / 0.35 / 0.15` (text / suitability / recency),
+    with a 30-day recency half-life** — a starting point in the same sense as
+    M7.3's trigram thresholds, tuned in M12.3. A weight is not the range a term
+    uses, and the difference is recorded in the code: `juniorScore/100` and the
+    recency curve genuinely span `[0,1]`, but `ts_rank(…, 32)` does not — measured
+    against this schema's `setweight` vector, a one-word title hit ranks `0.378`
+    and a description hit `0.108`. So suitability holds the widest range, which is
+    right for this product, while the text term can still open a ~`0.14` gap —
+    enough to lift a title match over a description match carrying a ~38-point
+    score advantage.
+  - **Each term has its own e2e case built to isolate it**, because the first
+    attempt did not. A pair differing only in age cannot test the recency term at
+    all — the relevance tiebreak is `effectivePostedAt DESC` too, so both
+    orderings agree by construction. The cases therefore use pairs that disagree:
+    one ranks first under `relevance` and last under `juniorScore`/`postedAt`, and
+    only the term under test can produce the flip. Mutation-checked by zeroing
+    each weight in turn — the first version of the text case survived a zeroed
+    text weight, which is how the flaw was found; it now fails.
+  - Every sort ends in `effectivePostedAt DESC, id DESC`, M4.2's total order, so a
+    job cannot swap pages and hide from someone paging through. A paging case
+    asserts it under `sort=juniorScore`.
+  - `sort` values are matched **exactly**, unlike the enum facets M9.2 reads
+    case-insensitively: no case fold round-trips `juniorScore`, so accepting
+    `juniorscore` would mean maintaining a second spelling of each.
+  - **The M9.2 fixtures were re-pointed, not just extended.** Four filter cases had
+    used an `EXPERIENCED` job as their counter-example, which this milestone now
+    hides by default — they would have kept passing while testing nothing. A new
+    `AMBIGUOUS` fixture takes over every filter role, and the experienced bands are
+    reserved for the default-set cases.
 
 ### M9.4 — Pagination and validation
 - [ ] Offset pagination, `pageSize` at most 50, envelope `{ items, page, pageSize, total }`

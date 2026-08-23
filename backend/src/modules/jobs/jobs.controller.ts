@@ -29,8 +29,10 @@ export class JobsController {
     return this.jobsService.list(query.page, query.pageSize);
   }
 
-  // Any literal route under /jobs (e.g. /jobs/search, M9.1) must be declared
-  // above this one: ':id' is parsed as a UUID and would reject the literal.
+  // Any literal route under /jobs must be matched before this one: ':id' is
+  // parsed as a UUID and would reject the literal with a 400. /jobs/search (M9.1)
+  // lives in SearchController, which AppModule imports ahead of JobsModule for
+  // exactly this reason; a further literal route added here goes above this one.
   @Public()
   @Get(':id')
   async detail(
