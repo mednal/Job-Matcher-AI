@@ -172,6 +172,106 @@ describe('JobsService', () => {
     });
   });
 
+  // M10.2 — the saved list's redirect resolution. It answers with the canonical
+  // job, keyed by the id that was asked for, so the caller can pair a saved row
+  // with the card it should now show.
+  describe('findCanonicalSummaries()', () => {
+    it('reads nothing when there is nothing to resolve', async () => {
+      const summaries = await service.findCanonicalSummaries([]);
+
+      expect(summaries.size).toBe(0);
+      expect(prisma.job.findUnique).not.toHaveBeenCalled();
+      expect(prisma.job.findMany).not.toHaveBeenCalled();
+    });
+
+    it('resolves a merged job to its survivor, keyed by the requested id', async () => {
+      prisma.job.findUnique
+        .mockResolvedValueOnce({ id: 'merged-1', mergedIntoJobId: 'job-1' })
+        .mockResolvedValueOnce({ id: 'job-1', mergedIntoJobId: null });
+      prisma.job.findMany.mockResolvedValue([
+        { ...summaryRow(), isActive: true },
+      ]);
+
+      const summaries = await service.findCanonicalSummaries(['merged-1']);
+
+      expect([...summaries.keys()]).toEqual(['merged-1']);
+      expect(summaries.get('merged-1')?.job.id).toBe('job-1');
+      expect(summaries.get('merged-1')?.job.sourceCount).toBe(1);
+    });
+
+    // The one fact a summary does not carry, and the whole reason this method
+    // returns a wrapper rather than the DTO alone.
+    it('reports whether the canonical job is still listed', async () => {
+      prisma.job.findUnique.mockResolvedValueOnce({
+        id: 'job-1',
+        mergedIntoJobId: null,
+      });
+      prisma.job.findMany.mockResolvedValue([
+        { ...summaryRow(), isActive: false },
+      ]);
+
+      const summaries = await service.findCanonicalSummaries(['job-1']);
+
+      expect(summaries.get('job-1')?.isActive).toBe(false);
+      expect(prisma.job.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          select: expect.objectContaining({ isActive: true }) as unknown,
+        }),
+      );
+    });
+
+    it('loads the summaries in one query, whatever they resolved from', async () => {
+      prisma.job.findUnique
+        .mockResolvedValueOnce({ id: 'merged-1', mergedIntoJobId: 'job-1' })
+        .mockResolvedValueOnce({ id: 'job-1', mergedIntoJobId: null })
+        .mockResolvedValueOnce({ id: 'merged-2', mergedIntoJobId: 'job-1' })
+        .mockResolvedValueOnce({ id: 'job-1', mergedIntoJobId: null });
+      prisma.job.findMany.mockResolvedValue([
+        { ...summaryRow(), isActive: true },
+      ]);
+
+      const summaries = await service.findCanonicalSummaries([
+        'merged-1',
+        'merged-2',
+      ]);
+
+      expect(prisma.job.findMany).toHaveBeenCalledTimes(1);
+      // Two saves of the same vacancy are one row to fetch, not two.
+      expect(prisma.job.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: { in: ['job-1'] } } }),
+      );
+      expect(summaries.get('merged-1')?.job.id).toBe('job-1');
+      expect(summaries.get('merged-2')?.job.id).toBe('job-1');
+    });
+
+    // A broken chain is a data defect. The id is simply absent, so the caller
+    // falls back to the row as stored rather than losing the entry — and never
+    // gets handed the tombstone dressed up as a canonical job.
+    it('omits an id whose merge chain cycles', async () => {
+      prisma.job.findUnique.mockImplementation(
+        ({ where }: { where: { id: string } }) =>
+          Promise.resolve(
+            where.id === 'job-a'
+              ? { id: 'job-a', mergedIntoJobId: 'job-b' }
+              : { id: 'job-b', mergedIntoJobId: 'job-a' },
+          ),
+      );
+
+      const summaries = await service.findCanonicalSummaries(['job-a']);
+
+      expect(summaries.size).toBe(0);
+      expect(prisma.job.findMany).not.toHaveBeenCalled();
+    });
+
+    it('omits an id that names no row at all', async () => {
+      prisma.job.findUnique.mockResolvedValue(null);
+
+      const summaries = await service.findCanonicalSummaries(['gone']);
+
+      expect(summaries.size).toBe(0);
+    });
+  });
+
   describe('findDetail()', () => {
     it('returns null for an unknown id', async () => {
       prisma.job.findUnique.mockResolvedValue(null);

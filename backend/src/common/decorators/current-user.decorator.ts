@@ -8,11 +8,15 @@ export interface AuthenticatedUser {
   email: string;
 }
 
+// `undefined` on an @OptionalAuth() route with no token (M9.5) — there, the
+// absence of a user is a valid request, not a guard that failed to run. On a
+// route the guard authenticates, `user` is always set, which is why those
+// controllers may still annotate the parameter as `AuthenticatedUser`.
 export const CurrentUser = createParamDecorator(
-  (_data: unknown, ctx: ExecutionContext): AuthenticatedUser => {
+  (_data: unknown, ctx: ExecutionContext): AuthenticatedUser | undefined => {
     const request = ctx
       .switchToHttp()
-      .getRequest<{ user: AuthenticatedUser }>();
+      .getRequest<{ user?: AuthenticatedUser }>();
     return request.user;
   },
 );

@@ -52,10 +52,11 @@ describe('SearchQuery', () => {
     expect(errorsFor({ pageSize: MAX_PAGE_SIZE + 1 })).toEqual(['pageSize']);
   });
 
-  // M9.5 adds profile-fit. Until it exists, forbidNonWhitelisted must reject its
-  // parameters: one the backend silently ignores returns jobs the user excluded,
-  // or an order they did not ask for.
-  it('rejects a parameter that has not been implemented yet', () => {
+  // M9.5's profile-fit ranking follows the access token, not a query parameter:
+  // §8.1 declares none, so `profileFit` is an unknown parameter and stays a 400.
+  // One the backend accepted and ignored would promise an ordering it never
+  // applied.
+  it('rejects a parameter no query DTO declares', () => {
     expect(errorsFor({ q: 'java', profileFit: 'true' })).toEqual([
       'profileFit',
     ]);

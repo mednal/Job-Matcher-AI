@@ -1,3 +1,4 @@
+import type { Profile } from '@prisma/client';
 import { SearchService } from './search.service';
 import {
   NO_FILTERS,
@@ -6,6 +7,7 @@ import {
   SearchRepository,
   SearchResultRow,
 } from './search.repository';
+import { ProfilesService } from '../profiles/profiles.service';
 import { SearchQuery, SearchSort } from './dto/search.query';
 
 function resultRow(overrides: Partial<SearchResultRow> = {}): SearchResultRow {
@@ -35,21 +37,51 @@ function query(overrides: Partial<SearchQuery> = {}): SearchQuery {
   return Object.assign(new SearchQuery(), overrides);
 }
 
+const USER_ID = 'user-1';
+
+function profile(overrides: Partial<Profile> = {}): Profile {
+  return {
+    id: 'profile-1',
+    userId: USER_ID,
+    displayName: null,
+    yearsOfExperience: 0,
+    desiredRoles: [],
+    technologies: [],
+    locations: [],
+    countryCodes: [],
+    workplaceTypes: [],
+    updatedAt: new Date('2026-08-20T00:00:00.000Z'),
+    ...overrides,
+  };
+}
+
 describe('SearchService', () => {
   let calls: SearchCriteria[];
   let page: SearchPage;
   let service: SearchService;
+  /** What `ProfilesService` answers with; `null` is "never saved a profile". */
+  let storedProfile: Profile | null;
+  /** Every userId the service actually looked a profile up for. */
+  let profileLookups: string[];
 
   beforeEach(() => {
     calls = [];
     page = { rows: [], total: 0 };
+    storedProfile = null;
+    profileLookups = [];
     const repository = {
       findPage: (criteria: SearchCriteria) => {
         calls.push(criteria);
         return Promise.resolve(page);
       },
     } as unknown as SearchRepository;
-    service = new SearchService(repository);
+    const profiles = {
+      findByUserId: (userId: string) => {
+        profileLookups.push(userId);
+        return Promise.resolve(storedProfile);
+      },
+    } as unknown as ProfilesService;
+    service = new SearchService(repository, profiles);
   });
 
   it('passes the text query through and translates the page into skip/take', async () => {
@@ -60,6 +92,7 @@ describe('SearchService', () => {
         q: 'junior java',
         filters: NO_FILTERS,
         sort: SearchSort.RELEVANCE,
+        profile: null,
         skip: 40,
         take: 20,
       },
@@ -163,6 +196,97 @@ describe('SearchService', () => {
       await service.search(query({ sort: undefined }));
 
       expect(calls[0].sort).toBe(SearchSort.RELEVANCE);
+    });
+  });
+
+  // M9.5 — profile fit. The service's job is deciding *whether* there is a
+  // profile to rank by; what the fit is worth is the repository's.
+  describe('profile fit', () => {
+    it('sends no profile for an anonymous request', async () => {
+      await service.search(query({ q: 'java' }));
+
+      expect(calls[0].profile).toBeNull();
+      expect(profileLookups).toEqual([]);
+    });
+
+    it('reduces the stored profile to the technologies and places it ranks by', async () => {
+      storedProfile = profile({
+        technologies: ['java', 'spring-boot'],
+        locations: ['Berlin'],
+        countryCodes: ['DE'],
+        // Read by neither: the milestone weights technologies and locations.
+        desiredRoles: ['Java Developer'],
+        yearsOfExperience: 1,
+      });
+
+      await service.search(query({ q: 'java' }), USER_ID);
+
+      expect(profileLookups).toEqual([USER_ID]);
+      expect(calls[0].profile).toEqual({
+        technologies: ['java', 'spring-boot'],
+        locations: ['Berlin'],
+        countryCodes: ['DE'],
+      });
+    });
+
+    // A registered user who has never saved a profile must rank exactly like an
+    // anonymous one, so the repository sees the same `null` in both cases rather
+    // than an empty fit it would have to special-case.
+    it('sends no profile when the user has never saved one', async () => {
+      storedProfile = null;
+
+      await service.search(query({ q: 'java' }), USER_ID);
+
+      expect(calls[0].profile).toBeNull();
+    });
+
+    it('sends no profile when the saved one names nothing to rank by', async () => {
+      storedProfile = profile({ displayName: 'Nala', yearsOfExperience: 1 });
+
+      await service.search(query({ q: 'java' }), USER_ID);
+
+      expect(calls[0].profile).toBeNull();
+    });
+
+    it.each([
+      ['technologies only', { technologies: ['java'] }],
+      ['locations only', { locations: ['Berlin'] }],
+      ['country codes only', { countryCodes: ['DE'] }],
+    ])('ranks by a profile that fills in %s', async (_name, saved) => {
+      storedProfile = profile(saved);
+
+      await service.search(query({ q: 'java' }), USER_ID);
+
+      expect(calls[0].profile).not.toBeNull();
+    });
+
+    // An explicit ordering is the answer the caller asked for. Blending a
+    // preference into it is the same failure as ignoring a filter — and the
+    // profile is not even fetched, because it could not change the result.
+    it.each([SearchSort.JUNIOR_SCORE, SearchSort.POSTED_AT])(
+      'does not apply profile fit to sort=%s',
+      async (sort) => {
+        storedProfile = profile({ technologies: ['java'] });
+
+        await service.search(query({ q: 'java', sort }), USER_ID);
+
+        expect(calls[0].profile).toBeNull();
+        expect(profileLookups).toEqual([]);
+      },
+    );
+
+    // Ranking only. Two users must get the same jobs in different orders, so
+    // nothing the profile carries may reach the filter set.
+    it('never turns a profile into a filter', async () => {
+      storedProfile = profile({
+        technologies: ['java'],
+        locations: ['Berlin'],
+        countryCodes: ['DE'],
+      });
+
+      await service.search(query({ q: 'java' }), USER_ID);
+
+      expect(calls[0].filters).toEqual(NO_FILTERS);
     });
   });
 

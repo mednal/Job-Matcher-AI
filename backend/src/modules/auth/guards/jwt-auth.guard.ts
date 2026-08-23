@@ -8,6 +8,7 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator';
+import { IS_OPTIONAL_AUTH_KEY } from '../../../common/decorators/optional-auth.decorator';
 import type { AuthenticatedUser } from '../../../common/decorators/current-user.decorator';
 
 interface AccessTokenPayload {
@@ -16,9 +17,10 @@ interface AccessTokenPayload {
 }
 
 // Registered globally (AuthModule, APP_GUARD) so every route is authenticated by
-// default; a route opts out with @Public() (docs/ARCHITECTURE.md §9). Stateless —
-// it verifies the JWT signature/expiry only and never queries the database, which
-// is the point of a short-lived access token.
+// default; a route opts out entirely with @Public(), or opts into *optional*
+// authentication with @OptionalAuth() (docs/ARCHITECTURE.md §9). Stateless — it
+// verifies the JWT signature/expiry only and never queries the database, which is
+// the point of a short-lived access token.
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
@@ -38,6 +40,13 @@ export class JwtAuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<Request>();
     const token = this.extractToken(request);
     if (!token) {
+      // M9.5 — an optional-auth route serves the anonymous request rather than
+      // refusing it, and no user is attached. A token that *is* present is still
+      // verified below: a caller sending an expired one must be told, not quietly
+      // served the unpersonalized answer with a 200.
+      if (this.isOptionalAuth(context)) {
+        return true;
+      }
       throw new UnauthorizedException('Missing access token');
     }
 
@@ -54,6 +63,15 @@ export class JwtAuthGuard implements CanActivate {
     };
     (request as Request & { user: AuthenticatedUser }).user = user;
     return true;
+  }
+
+  private isOptionalAuth(context: ExecutionContext): boolean {
+    return (
+      this.reflector.getAllAndOverride<boolean>(IS_OPTIONAL_AUTH_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) === true
+    );
   }
 
   private extractToken(request: Request): string | undefined {

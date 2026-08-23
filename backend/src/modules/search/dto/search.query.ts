@@ -104,10 +104,13 @@ export enum SearchSort {
 
 /**
  * `GET /jobs/search` — the text query (M9.1), the filters of
- * `docs/ARCHITECTURE.md` §8.1 (M9.2), `sort` (M9.3) and pagination. Profile-fit
- * is M9.5; until it exists `forbidNonWhitelisted` rejects its parameters, which
- * is the correct answer: a parameter the backend ignores would silently return
- * jobs the user excluded.
+ * `docs/ARCHITECTURE.md` §8.1 (M9.2), `sort` (M9.3) and pagination.
+ *
+ * M9.5's profile-fit ranking adds **nothing** here on purpose: §8.1 lists no
+ * profile parameter, and fit follows the access token rather than a flag. A
+ * `profileFit` parameter therefore stays a 400, like any other the DTO does not
+ * declare — a parameter the backend accepted and ignored would be worse than one
+ * it refuses.
  *
  * There is no salary filter and there never will be in the MVP — salary is not in
  * the schema at all (D7, `docs/DATABASE.md` §3.4).

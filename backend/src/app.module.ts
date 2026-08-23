@@ -7,6 +7,7 @@ import { UsersModule } from './modules/users/users.module';
 import { ProfilesModule } from './modules/profiles/profiles.module';
 import { JobsModule } from './modules/jobs/jobs.module';
 import { SearchModule } from './modules/search/search.module';
+import { SavedJobsModule } from './modules/saved-jobs/saved-jobs.module';
 import { SourcesModule } from './modules/sources/sources.module';
 import { IngestionModule } from './modules/ingestion/ingestion.module';
 
@@ -22,6 +23,7 @@ import { IngestionModule } from './modules/ingestion/ingestion.module';
     // `/jobs/search` must be matched before `/jobs/:id` (see SearchController).
     SearchModule,
     JobsModule,
+    SavedJobsModule,
     SourcesModule,
     IngestionModule,
   ],

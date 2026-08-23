@@ -11,7 +11,7 @@ import { TEXT_SEARCH_CONFIGURATION_SQL } from '../../common/utils/text-search-co
 import { SearchSort } from './dto/search.query';
 
 /**
- * M9.1–M9.3 — the search read path, and the only place raw SQL lives on the query side
+ * M9.1–M9.5 — the search read path, and the only place raw SQL lives on the query side
  * (`docs/ARCHITECTURE.md` §5.4). It is raw because Prisma's query API cannot
  * express `tsvector` matching, `ts_rank`, or a `regconfig` chosen per row; every
  * other read in the application goes through Prisma.
@@ -41,12 +41,33 @@ export interface SearchFilters {
   readonly postedWithinDays: number | null;
 }
 
+/**
+ * M9.5 — the caller's saved preferences, already reduced to the two things
+ * ranking uses (`docs/ARCHITECTURE.md` §6.5). The service passes `null` for an
+ * anonymous request *and* for a profile that names neither technologies nor a
+ * place, so the repository has one condition to test rather than three.
+ *
+ * These are preferences, never predicates: nothing here narrows the result set.
+ * A profile that filtered would hide jobs the user never asked to hide, and would
+ * make the same URL mean different things to different people.
+ */
+export interface ProfileFit {
+  /** Canonical technology slugs, the vocabulary `Job.technologies` is stored in. */
+  readonly technologies: string[];
+  /** Free text, matched against a job's display location as M9.2's filter does. */
+  readonly locations: string[];
+  /** ISO-3166 alpha-2, matched exactly against `Job.countryCode`. */
+  readonly countryCodes: string[];
+}
+
 /** What one page of results is asked for. */
 export interface SearchCriteria {
   /** Already trimmed; `null` means "no text query", not "empty text query". */
   readonly q: string | null;
   readonly filters: SearchFilters;
   readonly sort: SearchSort;
+  /** `null` when the request is anonymous or the profile says nothing usable. */
+  readonly profile: ProfileFit | null;
   readonly skip: number;
   readonly take: number;
 }
@@ -139,6 +160,44 @@ const RELEVANCE_RECENCY_WEIGHT = 0.15;
 
 /** Days at which the recency term has decayed to half of its value. */
 const RELEVANCE_HALF_LIFE_DAYS = 30;
+
+/**
+ * M9.5 — what profile fit is worth in the blend, for a request that has a profile
+ * to fit against. The other three terms are scaled by `1 - this`, so their
+ * proportions to one another are exactly what they were before this milestone and
+ * an anonymous request is ranked by the identical expression. Adding a fourth term
+ * must not silently re-tune the first three.
+ *
+ * `0.2` is deliberately smaller than suitability's share: the product's promise is
+ * "jobs genuinely suitable for a junior", and a profile is a preference, not a
+ * correction to that. It is large enough to reorder near-equal jobs and too small
+ * to lift a job the user is not ready for over one they are. Tuned in M12.3 with
+ * the rest of the blend.
+ */
+const RELEVANCE_PROFILE_WEIGHT = 0.2;
+
+/**
+ * How the fit term splits between the two things §6.5 names.
+ *
+ * Technologies carry more because they discriminate more: most result sets are
+ * already narrowed by where the user is looking, while the skills a posting names
+ * differ job by job. When a profile supplies only one of the two, that side takes
+ * the whole weight (see `profileFit`) — otherwise a user who saved technologies
+ * and no location would be capped at 0.6 of a term they filled in completely.
+ */
+const PROFILE_TECHNOLOGY_SHARE = 0.6;
+const PROFILE_LOCATION_SHARE = 0.4;
+
+/**
+ * Matching this many of the user's technologies is already a full technology fit.
+ *
+ * Without a saturation point the denominator would be the size of the profile's
+ * list, and a user who saved ten skills would need all ten to score what a user
+ * who saved one scores with one — the term would quietly do less work the more
+ * carefully someone filled in their profile. Three shared technologies is a strong
+ * signal whether the list holds three or thirty.
+ */
+const PROFILE_TECHNOLOGY_SATURATION = 3;
 
 /**
  * Selected column-by-column rather than `SELECT *`: `searchVector` alone is
@@ -419,8 +478,15 @@ export class SearchRepository {
       case SearchSort.JUNIOR_SCORE:
         return Prisma.sql`"Job"."juniorScore" DESC NULLS LAST, ${tiebreak}`;
 
+      // M9.5 — profile fit rides on `relevance` only. `juniorScore` and
+      // `postedAt` are orderings the caller named outright, and quietly blending
+      // a preference into an explicit sort is the same failure as ignoring a
+      // filter: the answer stops being the one that was asked for.
       case SearchSort.RELEVANCE:
-        return Prisma.sql`${this.relevance(criteria.q)} DESC, ${tiebreak}`;
+        return Prisma.sql`${this.relevance(
+          criteria.q,
+          criteria.profile,
+        )} DESC, ${tiebreak}`;
     }
   }
 
@@ -437,14 +503,141 @@ export class SearchRepository {
    *   to be unsuitable, but it cannot outrank a job we have evidence for.
    * - **Recency**: `1 / (1 + age / halfLife)`, which is `1` today and `0.5` at the
    *   half-life. Bounded and monotone, so it can never dominate the other two.
+   * - **Profile fit** (M9.5): present only when the caller is authenticated and
+   *   has saved something to fit against. It takes `RELEVANCE_PROFILE_WEIGHT` and
+   *   the other three are scaled by the remainder, so an anonymous request is
+   *   ranked by exactly the expression it was before.
    */
-  private relevance(q: string | null): Prisma.Sql {
+  private relevance(q: string | null, profile: ProfileFit | null): Prisma.Sql {
     const ageInDays = Prisma.sql`(EXTRACT(EPOCH FROM (NOW() - "Job"."effectivePostedAt")) / 86400.0)::float8`;
 
+    // 1 when there is nothing to fit against, so the three terms keep their own
+    // weights and an anonymous request is ranked by the pre-M9.5 expression.
+    const scale = profile === null ? 1 : 1 - RELEVANCE_PROFILE_WEIGHT;
+
+    const fit =
+      profile === null
+        ? Prisma.empty
+        : Prisma.sql`+ ${RELEVANCE_PROFILE_WEIGHT}::float8 * ${this.profileFit(
+            profile,
+          )}`;
+
     return Prisma.sql`(
-      ${RELEVANCE_TEXT_WEIGHT}::float8 * ${this.rank(q)}::float8
-      + ${RELEVANCE_SCORE_WEIGHT}::float8 * (COALESCE("Job"."juniorScore", 0)::float8 / 100.0)
-      + ${RELEVANCE_RECENCY_WEIGHT}::float8 * (1.0 / (1.0 + ${ageInDays} / ${RELEVANCE_HALF_LIFE_DAYS}::float8))
+      ${RELEVANCE_TEXT_WEIGHT * scale}::float8 * ${this.rank(q)}::float8
+      + ${RELEVANCE_SCORE_WEIGHT * scale}::float8 * (COALESCE("Job"."juniorScore", 0)::float8 / 100.0)
+      + ${RELEVANCE_RECENCY_WEIGHT * scale}::float8 * (1.0 / (1.0 + ${ageInDays} / ${RELEVANCE_HALF_LIFE_DAYS}::float8))
+      ${fit}
     )`;
+  }
+
+  /**
+   * M9.5 — how well one job fits the caller's saved preferences, in `[0,1]`, so it
+   * blends on the same scale as the other three terms.
+   *
+   * It is computed here, per query, and nothing about it is ever written back: the
+   * stored `juniorScore` describes the job and stays user-independent and
+   * cacheable (`docs/ARCHITECTURE.md` §6.5). Two users therefore see the same
+   * jobs — the same `total`, the same `juniorScore` on every row — in different
+   * orders, which is the whole of what this milestone changes.
+   *
+   * The caller guarantees at least one side is non-empty; a profile that names
+   * neither reaches the repository as `null`.
+   */
+  private profileFit(profile: ProfileFit): Prisma.Sql {
+    const hasTechnologies = profile.technologies.length > 0;
+    const hasPlace =
+      profile.locations.length > 0 || profile.countryCodes.length > 0;
+
+    // A side the profile is silent about contributes nothing and forfeits its
+    // share to the other, rather than capping a fully-filled side below 1.
+    const technologyWeight = !hasTechnologies
+      ? 0
+      : hasPlace
+        ? PROFILE_TECHNOLOGY_SHARE
+        : 1;
+    const placeWeight = !hasPlace
+      ? 0
+      : hasTechnologies
+        ? PROFILE_LOCATION_SHARE
+        : 1;
+
+    const terms: Prisma.Sql[] = [];
+
+    if (hasTechnologies) {
+      terms.push(
+        Prisma.sql`${technologyWeight}::float8 * ${this.technologyFit(
+          profile.technologies,
+        )}`,
+      );
+    }
+    if (hasPlace) {
+      terms.push(
+        Prisma.sql`${placeWeight}::float8 * ${this.placeFit(profile)}`,
+      );
+    }
+
+    return Prisma.sql`(${Prisma.join(terms, ' + ')})`;
+  }
+
+  /**
+   * The share of the caller's technologies this job names, saturating at
+   * `PROFILE_TECHNOLOGY_SATURATION`.
+   *
+   * Counted over the *profile's* list rather than the job's, so a job that lists
+   * twenty technologies is not rewarded for breadth; the profile is deduplicated
+   * at write time (M3.6), so each entry can contribute at most once. Both sides
+   * are canonical slugs (`docs/DATABASE.md` §6), which is what makes a plain
+   * equality comparison correct here.
+   *
+   * The denominator is computed in TypeScript because the list is known when the
+   * query is built — one less subexpression evaluated per row.
+   */
+  private technologyFit(technologies: string[]): Prisma.Sql {
+    const denominator = Math.min(
+      technologies.length,
+      PROFILE_TECHNOLOGY_SATURATION,
+    );
+
+    return Prisma.sql`LEAST(
+      (
+        SELECT COUNT(*)
+        FROM unnest(ARRAY[${Prisma.join(technologies)}]::text[]) AS wanted
+        WHERE wanted = ANY("Job"."technologies")
+      )::float8 / ${denominator}::float8,
+      1.0
+    )`;
+  }
+
+  /**
+   * 1 when the job sits somewhere the caller named, 0 otherwise.
+   *
+   * Binary rather than graded: `Profile.locations` is free text and
+   * `Profile.countryCodes` is ISO alpha-2, two vocabularies with no common scale,
+   * so any ranking *between* a city hit and a country hit would be invented. The
+   * text match reuses M9.2's `ILIKE` semantics deliberately — a place must mean
+   * the same thing when it ranks as when it filters.
+   *
+   * `Job.location` and `Job.countryCode` are both nullable and `NULL ILIKE …` is
+   * `NULL`, which the `CASE` resolves to 0: an unplaced job is not a match, it is
+   * an absence of evidence, and it still appears in the results.
+   */
+  private placeFit(profile: ProfileFit): Prisma.Sql {
+    const matches: Prisma.Sql[] = profile.locations.map(
+      (location) =>
+        Prisma.sql`"Job"."location" ILIKE ${likeContains(location)}`,
+    );
+
+    if (profile.countryCodes.length > 0) {
+      matches.push(
+        Prisma.sql`"Job"."countryCode" = ANY(ARRAY[${Prisma.join(
+          profile.countryCodes,
+        )}]::text[])`,
+      );
+    }
+
+    return Prisma.sql`(CASE WHEN ${Prisma.join(
+      matches,
+      ' OR ',
+    )} THEN 1.0::float8 ELSE 0.0::float8 END)`;
   }
 }

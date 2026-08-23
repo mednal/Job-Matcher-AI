@@ -72,3 +72,35 @@ export class JobSummaryResponse {
     return response;
   }
 }
+
+/**
+ * Distinct sources carrying a job — the "also listed on N sources" count. One
+ * source can hold two postings for the same vacancy, so the postings are reduced
+ * to their source ids first.
+ *
+ * It lives beside the DTO because three Prisma reads now project this same
+ * summary (`jobs`, `saved-jobs`, and M10.2's redirect resolution) and a fourth
+ * inline `new Set(...)` is one more place for the two counts to drift apart.
+ * `search/` does not use it: its count is computed in SQL (§5.4).
+ */
+export function countDistinctSources(
+  postings: readonly { sourceId: string }[],
+): number {
+  return new Set(postings.map((posting) => posting.sourceId)).size;
+}
+
+/**
+ * M10.2 — a job summary reached by following a saved job's merge chain, plus the
+ * one fact about the canonical row a summary does not carry.
+ *
+ * `isActive` is here rather than on `JobSummaryResponse` because the discovery
+ * lists filter on it (`LISTABLE_JOBS_WHERE`), so there it would be a constant
+ * `true` on every card. The saved list is the only place it can vary, and the
+ * only place a client has to render it.
+ */
+export interface ResolvedJobSummary {
+  /** The canonical job, with `mergedIntoJobId` already followed to its end. */
+  readonly job: JobSummaryResponse;
+  /** Whether that canonical job is still listed (`docs/DATABASE.md` §8). */
+  readonly isActive: boolean;
+}

@@ -223,6 +223,15 @@ describe('Jobs (e2e)', () => {
       await request(server()).get('/api/v1/jobs?pageSize=1.5').expect(400);
     });
 
+    // M9.4's `MAX_PAGE`, asserted here too because the bound lives on the shared
+    // `PaginationQuery`: before it existed, `?page=1e20` passed validation
+    // (`Number.isInteger(1e20)` is `true`) and became an `OFFSET` past what
+    // PostgreSQL's `bigint` holds, so this route answered a 500 as well.
+    it('rejects a page too deep to run', async () => {
+      await request(server()).get('/api/v1/jobs?page=201').expect(400);
+      await request(server()).get('/api/v1/jobs?page=1e20').expect(400);
+    });
+
     it('rejects an unknown query parameter', async () => {
       await request(server()).get('/api/v1/jobs?sort=relevance').expect(400);
     });

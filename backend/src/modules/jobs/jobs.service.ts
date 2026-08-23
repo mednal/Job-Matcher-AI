@@ -2,7 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PaginatedResponse } from '../../common/dto/paginated.response';
-import { JobSummaryResponse } from './dto/job-summary.response';
+import {
+  countDistinctSources,
+  JobSummaryResponse,
+  ResolvedJobSummary,
+} from './dto/job-summary.response';
 import { JobDetailResponse } from './dto/job-detail.response';
 
 /**
@@ -19,7 +23,12 @@ export const LISTABLE_JOBS_WHERE = {
   mergedIntoJobId: null,
 } satisfies Prisma.JobWhereInput;
 
-const JOB_SUMMARY_SELECT = {
+/**
+ * Exported so `saved-jobs/` can project the same job summary through its own
+ * relation without restating seventeen column names. A second copy would be a
+ * second contract to keep in sync, and the two lists render the same card.
+ */
+export const JOB_SUMMARY_SELECT = {
   id: true,
   title: true,
   companyName: true,
@@ -123,13 +132,83 @@ export class JobsService {
     ]);
 
     const items = rows.map((row) =>
-      JobSummaryResponse.fromEntity(
-        row,
-        new Set(row.postings.map((posting) => posting.sourceId)).size,
-      ),
+      JobSummaryResponse.fromEntity(row, countDistinctSources(row.postings)),
     );
 
     return PaginatedResponse.of(items, page, pageSize, total);
+  }
+
+  /**
+   * Whether a job id names a real row — merged-away and deactivated rows
+   * included, since both still exist and both can legitimately be saved (M10.1).
+   *
+   * It lives here rather than in `saved-jobs/` so that `prisma.job` keeps a
+   * single owner (docs/ARCHITECTURE.md §4.2). The caller gets a boolean, not a
+   * row, so no Prisma type escapes.
+   */
+  async exists(id: string): Promise<boolean> {
+    const row = await this.prisma.job.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    return row !== null;
+  }
+
+  /**
+   * M10.2 — the canonical summary behind each of the given job ids, keyed by the
+   * id that was *asked for* rather than the one that answered. A job merged away
+   * (D2) resolves through `mergedIntoJobId`, so a saved job whose vacancy was
+   * folded into another shows the survivor's card instead of a dead row.
+   *
+   * It lives here, not in `saved-jobs/`, because it reads `prisma.job` and that
+   * table has one owner (`docs/ARCHITECTURE.md` §4.2). The caller gets response
+   * DTOs, so no Prisma type escapes.
+   *
+   * An id whose chain is broken — a cycle, or longer than `MAX_MERGE_HOPS` — is
+   * simply **absent from the map**, already logged by the walk. The list caller
+   * then falls back to the row as stored: a data defect must not remove an entry
+   * from someone's collection, and a job the user can still open is a better
+   * answer than a gap in their saved list.
+   */
+  async findCanonicalSummaries(
+    ids: readonly string[],
+  ): Promise<Map<string, ResolvedJobSummary>> {
+    const canonicalIds = new Map<string, string>();
+    // Sequential on purpose: a caller passes the merged rows of one page, which
+    // is normally none and never more than a page, and each walk is one hop.
+    for (const id of new Set(ids)) {
+      const canonicalId = await this.resolveCanonicalId(id);
+      if (canonicalId) {
+        canonicalIds.set(id, canonicalId);
+      }
+    }
+    if (canonicalIds.size === 0) {
+      return new Map();
+    }
+
+    const rows = await this.prisma.job.findMany({
+      where: { id: { in: [...new Set(canonicalIds.values())] } },
+      // The shared summary plus the one column the discovery lists never need,
+      // because they exclude every row where it is false.
+      select: { ...JOB_SUMMARY_SELECT, isActive: true },
+    });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+
+    const summaries = new Map<string, ResolvedJobSummary>();
+    for (const [id, canonicalId] of canonicalIds) {
+      const row = byId.get(canonicalId);
+      if (!row) {
+        continue;
+      }
+      summaries.set(id, {
+        job: JobSummaryResponse.fromEntity(
+          row,
+          countDistinctSources(row.postings),
+        ),
+        isActive: row.isActive,
+      });
+    }
+    return summaries;
   }
 
   /**

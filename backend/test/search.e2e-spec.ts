@@ -12,9 +12,11 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { PaginatedResponse } from '../src/common/dto/paginated.response';
 import { JobSummaryResponse } from '../src/modules/jobs/dto/job-summary.response';
+import { AuthTokensResponse } from '../src/modules/auth/dto/auth-tokens.response';
 
 /**
- * M9.1–M9.3 — `GET /jobs/search`: full text, the §8.1 filters, and ordering.
+ * M9.1–M9.5 — `GET /jobs/search`: full text, the §8.1 filters, ordering, and
+ * query-time profile-fit ranking.
  *
  * The milestone's `Verify:` line is the "language-aware matching" block: a German
  * posting is found by a German query, and the configuration-mismatch case — the
@@ -31,6 +33,14 @@ import { JobSummaryResponse } from '../src/modules/jobs/dto/job-summary.response
  * bands are absent until a request names them. The `ordering` block covers the
  * three sorts and each term of the relevance blend.
  *
+ * M9.4's `Verify:` line is in `pagination and validation`: `pageSize=500` is
+ * rejected and an unknown parameter returns 400.
+ *
+ * M9.5's `Verify:` line is the `profile-fit ranking` block: the same query ranks
+ * differently for two profiles while the stored `juniorScore` is unchanged. That
+ * block owns the two accounts this suite registers; every other block runs
+ * anonymously, which is also how it keeps proving search works without a token.
+ *
  * Like `jobs.e2e-spec.ts`, this suite creates and removes its own rows, so it
  * passes against a database that has never been seeded. Every assertion is on
  * fixture ids or their relative position, never on result counts, so whatever
@@ -41,6 +51,9 @@ const SOURCE_KEY = `search-e2e-${RUN_ID}`;
 
 /** Invented, so `?q=` can only match this suite's own rows. */
 const RARE_TOKEN = 'Zephyrline';
+
+/** M9.5's two accounts. Matched on the domain so cleanup cannot miss one. */
+const TEST_EMAIL_DOMAIN = 'search-e2e.test';
 
 function body<T>(res: request.Response): T {
   return res.body as T;
@@ -75,12 +88,30 @@ interface Fixtures {
    */
   titleWeightWinnerId: string;
   titleWeightLoserId: string;
+  /**
+   * M9.5's pair: identical text and identical `juniorScore`, differing only in
+   * the technologies and the place — the two things a profile ranks by. The rust
+   * one is marginally newer, so it leads without a profile and a profile
+   * favouring the ruby one has to overturn a standing order rather than break a
+   * tie.
+   *
+   * Both carry technologies and a place that **no other case in this suite
+   * names**, so adding them cannot change what M9.2's exact-id filter assertions
+   * return.
+   */
+  rustJobId: string;
+  rubyJobId: string;
 }
 
 describe('Search (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
   let fixtures: Fixtures;
+  /** M9.5 — two accounts whose saved profiles point at opposite fixtures. */
+  let rustUserToken: string;
+  let rubyUserToken: string;
+  /** Registered, but has never saved a profile. */
+  let profilelessToken: string;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -99,7 +130,43 @@ describe('Search (e2e)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     fixtures = await createFixtures(prisma);
+
+    rustUserToken = await register('python-user');
+    rubyUserToken = await register('java-user');
+    profilelessToken = await register('no-profile-user');
+    await saveProfile(rustUserToken, {
+      technologies: ['rust', 'wasm'],
+      locations: ['Lisbon'],
+      countryCodes: ['PT'],
+    });
+    await saveProfile(rubyUserToken, {
+      technologies: ['ruby', 'rails'],
+      locations: ['Vienna'],
+      countryCodes: ['AT'],
+    });
   });
+
+  async function register(label: string): Promise<string> {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({
+        email: `${label}-${RUN_ID}@${TEST_EMAIL_DOMAIN}`,
+        password: 'a-strong-password',
+      })
+      .expect(201);
+    return body<AuthTokensResponse>(res).accessToken;
+  }
+
+  async function saveProfile(
+    token: string,
+    profile: Record<string, unknown>,
+  ): Promise<void> {
+    await request(app.getHttpServer())
+      .put('/api/v1/profiles/me')
+      .set('Authorization', `Bearer ${token}`)
+      .send(profile)
+      .expect(200);
+  }
 
   afterAll(async () => {
     if (fixtures) {
@@ -117,17 +184,38 @@ describe('Search (e2e)', () => {
       });
       await prisma.jobSource.delete({ where: { id: fixtures.sourceId } });
     }
+    // The accounts M9.5's block registers. Profile and RefreshToken cascade on a
+    // user delete, but both go explicitly so the suite leaves nothing behind even
+    // if the relation changes.
+    const testUsers = await prisma.user.findMany({
+      where: { email: { endsWith: `@${TEST_EMAIL_DOMAIN}` } },
+      select: { id: true },
+    });
+    const userIds = testUsers.map((user) => user.id);
+    if (userIds.length > 0) {
+      await prisma.profile.deleteMany({ where: { userId: { in: userIds } } });
+      await prisma.refreshToken.deleteMany({
+        where: { userId: { in: userIds } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+    }
     await app.close();
   });
 
   const server = () => app.getHttpServer();
 
+  // No token unless one is named — every block but M9.5's searches anonymously,
+  // which is what keeps "search remains usable without a token" continuously true
+  // rather than asserted once.
   async function search(
     query: string,
+    token?: string,
   ): Promise<PaginatedResponse<JobSummaryResponse>> {
-    const res = await request(server())
-      .get(`/api/v1/jobs/search?${query}`)
-      .expect(200);
+    const call = request(server()).get(`/api/v1/jobs/search?${query}`);
+    if (token !== undefined) {
+      void call.set('Authorization', `Bearer ${token}`);
+    }
+    const res = await call.expect(200);
     return body<PaginatedResponse<JobSummaryResponse>>(res);
   }
 
@@ -645,6 +733,245 @@ describe('Search (e2e)', () => {
     });
   });
 
+  // M9.4. The envelope and both bounds come from the shared `PaginationQuery` and
+  // `PaginatedResponse`, so the unit spec in `common/dto` owns the parsing rules;
+  // these cases prove the endpoint actually applies them.
+  /**
+   * M9.5. The `Verify:` line is `ranks the same query differently for two
+   * profiles` together with `leaves the stored junior score untouched`.
+   *
+   * Every case runs the *same* query and reads the relative position of the same
+   * two fixtures, which differ only in their technologies and their place. The
+   * pair is built so the python job leads with no profile at all: a profile that
+   * puts the java job first has to overturn a standing order, not break a tie.
+   */
+  describe('profile-fit ranking', () => {
+    const FIT_QUERY = `q=${RARE_TOKEN}&pageSize=50`;
+
+    /** Positive when the rust job ranks ahead of the ruby one. */
+    const rustLead = async (token?: string): Promise<number> => {
+      const ids = idsOf(await search(FIT_QUERY, token));
+      const rust = ids.indexOf(fixtures.rustJobId);
+      const ruby = ids.indexOf(fixtures.rubyJobId);
+
+      expect(rust).toBeGreaterThan(-1);
+      expect(ruby).toBeGreaterThan(-1);
+      return ruby - rust;
+    };
+
+    it('ranks the same query differently for two profiles', async () => {
+      expect(await rustLead(rustUserToken)).toBeGreaterThan(0);
+      expect(await rustLead(rubyUserToken)).toBeLessThan(0);
+    });
+
+    // The other half of the flip: without a profile the rust job leads, so the
+    // ruby user's ordering is a reversal and not just the default order.
+    it('leaves an anonymous request ranked as it was', async () => {
+      expect(await rustLead()).toBeGreaterThan(0);
+    });
+
+    // Query time only (docs/ARCHITECTURE.md §6.5). The score describes the job,
+    // so it is identical in both users' responses and in the row itself.
+    it('leaves the stored junior score untouched', async () => {
+      // Sorted by id, not left in ranking order: the order is exactly what
+      // differs between these three requests, and the score is what must not.
+      const scoreOf = async (token?: string) => {
+        const items = (await search(FIT_QUERY, token)).items;
+        return items
+          .filter((job) =>
+            [fixtures.rustJobId, fixtures.rubyJobId].includes(job.id),
+          )
+          .map((job) => [job.id, job.juniorScore])
+          .sort();
+      };
+      const stored = await prisma.job.findMany({
+        where: { id: { in: [fixtures.rustJobId, fixtures.rubyJobId] } },
+        select: { id: true, juniorScore: true },
+        orderBy: { id: 'asc' },
+      });
+
+      const anonymous = await scoreOf();
+      expect(await scoreOf(rustUserToken)).toEqual(anonymous);
+      expect(await scoreOf(rubyUserToken)).toEqual(anonymous);
+      expect(stored.map((job) => job.juniorScore)).toEqual([80, 80]);
+    });
+
+    // Ranking, never filtering. A profile that narrowed would hide jobs the user
+    // never asked to hide, and the same URL would mean different things to
+    // different people.
+    it('returns the same jobs to both profiles and to no profile', async () => {
+      const ids = async (token?: string) =>
+        idsOf(await search(FIT_QUERY, token)).sort();
+
+      const anonymous = await ids();
+      expect(await ids(rustUserToken)).toEqual(anonymous);
+      expect(await ids(rubyUserToken)).toEqual(anonymous);
+    });
+
+    it('reports the same total to both profiles', async () => {
+      const anonymous = (await search(FIT_QUERY)).total;
+
+      expect((await search(FIT_QUERY, rustUserToken)).total).toBe(anonymous);
+      expect((await search(FIT_QUERY, rubyUserToken)).total).toBe(anonymous);
+    });
+
+    // A registered user who has never filled anything in is ranked exactly like
+    // an anonymous one — an empty profile must not be a profile of nothing.
+    it('ranks a user with no saved profile as anonymous', async () => {
+      const anonymous = idsOf(await search(FIT_QUERY));
+
+      expect(idsOf(await search(FIT_QUERY, profilelessToken))).toEqual(
+        anonymous,
+      );
+    });
+
+    // An explicit ordering is the answer the caller asked for; a preference must
+    // not quietly perturb it.
+    it.each(['juniorScore', 'postedAt'])(
+      'does not apply profile fit to sort=%s',
+      async (sort) => {
+        const query = `${FIT_QUERY}&sort=${sort}`;
+        const anonymous = idsOf(await search(query));
+
+        expect(idsOf(await search(query, rubyUserToken))).toEqual(anonymous);
+      },
+    );
+
+    // Search stays usable without a token — and a token that is present but
+    // unusable is refused rather than silently downgraded to an anonymous 200,
+    // which would tell the client nothing was wrong.
+    it('serves an anonymous request and refuses an invalid token', async () => {
+      await request(server())
+        .get(`/api/v1/jobs/search?${FIT_QUERY}`)
+        .expect(200);
+      await request(server())
+        .get(`/api/v1/jobs/search?${FIT_QUERY}`)
+        .set('Authorization', 'Bearer not.a.token')
+        .expect(401);
+    });
+
+    // §8.1 has no profile-fit parameter: fit follows the token, not a flag. One
+    // the backend accepted and ignored, or invented here, would be a contract
+    // nothing else in the product knows about.
+    it('takes no query parameter of its own', async () => {
+      await request(server())
+        .get(`/api/v1/jobs/search?${FIT_QUERY}&profileFit=true`)
+        .set('Authorization', `Bearer ${rubyUserToken}`)
+        .expect(400);
+    });
+  });
+
+  describe('pagination and validation', () => {
+    it('returns the { items, page, pageSize, total } envelope', async () => {
+      const page = await search(`q=${RARE_TOKEN}`);
+
+      expect(Object.keys(page).sort()).toEqual([
+        'items',
+        'page',
+        'pageSize',
+        'total',
+      ]);
+      expect(Array.isArray(page.items)).toBe(true);
+      expect(page.page).toBe(1);
+      expect(page.pageSize).toBe(20);
+      expect(typeof page.total).toBe('number');
+    });
+
+    // `total` describes the whole match, not the page — that is what makes a page
+    // count renderable.
+    it('counts every match while returning one page of them', async () => {
+      const full = await search(`q=${RARE_TOKEN}&pageSize=50`);
+      const first = await search(`q=${RARE_TOKEN}&pageSize=2`);
+
+      expect(first.items).toHaveLength(2);
+      expect(first.total).toBe(full.total);
+      expect(full.total).toBeGreaterThan(2);
+    });
+
+    it('walks the whole result set across pages without gap or repeat', async () => {
+      const all = idsOf(await search(`q=${RARE_TOKEN}&pageSize=50`));
+      const paged: string[] = [];
+
+      for (let page = 1; paged.length < all.length; page += 1) {
+        paged.push(
+          ...idsOf(await search(`q=${RARE_TOKEN}&page=${page}&pageSize=2`)),
+        );
+      }
+
+      expect(paged).toEqual(all);
+      expect(new Set(paged).size).toBe(all.length);
+    });
+
+    it('returns an empty page past the end, with the total intact', async () => {
+      const page = await search(`q=${RARE_TOKEN}&page=50&pageSize=50`);
+
+      expect(page.items).toEqual([]);
+      expect(page.total).toBeGreaterThan(0);
+    });
+
+    // The Verify line, half one.
+    it('rejects a pageSize past the cap', async () => {
+      await request(server())
+        .get('/api/v1/jobs/search?pageSize=500')
+        .expect(400);
+      await request(server())
+        .get('/api/v1/jobs/search?pageSize=51')
+        .expect(400);
+    });
+
+    it('accepts the cap itself', async () => {
+      const page = await search('pageSize=50');
+
+      expect(page.pageSize).toBe(50);
+    });
+
+    /**
+     * `Number.isInteger(1e20)` is `true`, so before `MAX_PAGE` this passed
+     * validation and became an `OFFSET` past what PostgreSQL's `bigint` holds:
+     * the request died in the driver and the caller got a **500 for input the API
+     * should have refused**. Both list endpoints were affected, since they share
+     * the DTO.
+     */
+    it('rejects a page too deep to run, rather than failing inside the driver', async () => {
+      for (const page of ['201', '1000000', '1e20', '9007199254740991']) {
+        const res = await request(server()).get(
+          `/api/v1/jobs/search?page=${page}`,
+        );
+
+        expect(res.status).toBe(400);
+      }
+    });
+
+    it.each(['page=0', 'page=-1', 'page=abc', 'pageSize=1.5', 'pageSize=0'])(
+      'rejects %s',
+      async (query) => {
+        await request(server()).get(`/api/v1/jobs/search?${query}`).expect(400);
+      },
+    );
+
+    // The Verify line, half two. `forbidNonWhitelisted` is what makes every
+    // "rejected, not ignored" note in M9.1-M9.3 true.
+    it('rejects an unknown query parameter', async () => {
+      await request(server())
+        .get('/api/v1/jobs/search?unknownParam=1')
+        .expect(400);
+      // Profile-fit ranking (M9.5) declares no parameter of its own, so this one
+      // is unknown and stays unknown.
+      await request(server())
+        .get(`/api/v1/jobs/search?q=${RARE_TOKEN}&profileFit=true`)
+        .expect(400);
+    });
+
+    // A repeated key arrives as an array. A scalar parameter must refuse it
+    // rather than silently taking one of the two values.
+    it('rejects a repeated scalar parameter', async () => {
+      await request(server())
+        .get('/api/v1/jobs/search?page=1&page=2')
+        .expect(400);
+      await request(server()).get('/api/v1/jobs/search?q=a&q=b').expect(400);
+    });
+  });
+
   describe('the route itself', () => {
     // /jobs/:id is parsed by ParseUUIDPipe. If it were matched first, the literal
     // `search` would come back as a 400 and this whole endpoint would be
@@ -963,6 +1290,34 @@ async function createFixtures(prisma: PrismaService): Promise<Fixtures> {
     juniorScore: 95,
   });
 
+  // M9.5's pair. Everything the other three relevance terms read is held equal —
+  // same words, same junior score, one minute of age between them — so the only
+  // thing that can reorder them is the profile. The python job leads anonymously.
+  const fitPairText = {
+    title: `${RARE_TOKEN} Platform Developer`,
+    companyName: 'Ashgrove Software',
+    language: 'en',
+    description:
+      'An entry level position on a small product team. Training is provided ' +
+      'and no professional experience is required.',
+  };
+  const rustJobId = await job('fit-rust', {
+    ...fitPairText,
+    postedAt: at(3),
+    location: 'Lisbon',
+    countryCode: 'PT',
+    technologies: ['rust', 'wasm'],
+    juniorScore: 80,
+  });
+  const rubyJobId = await job('fit-ruby', {
+    ...fitPairText,
+    postedAt: at(4),
+    location: 'Vienna',
+    countryCode: 'AT',
+    technologies: ['ruby', 'rails'],
+    juniorScore: 80,
+  });
+
   return {
     sourceId: source.id,
     germanJobId,
@@ -979,5 +1334,7 @@ async function createFixtures(prisma: PrismaService): Promise<Fixtures> {
     freshLowerScoreId,
     titleWeightWinnerId,
     titleWeightLoserId,
+    rustJobId,
+    rubyJobId,
   };
 }

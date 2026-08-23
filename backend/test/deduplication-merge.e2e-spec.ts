@@ -13,6 +13,7 @@ import type { NormalizedPosting } from '../src/modules/deduplication/posting-ide
 import { PaginatedResponse } from '../src/common/dto/paginated.response';
 import { JobSummaryResponse } from '../src/modules/jobs/dto/job-summary.response';
 import { JobDetailResponse } from '../src/modules/jobs/dto/job-detail.response';
+import { SavedJobsService } from '../src/modules/saved-jobs/saved-jobs.service';
 import { FIXTURE_SOURCE_KEY } from '../src/modules/sources/adapters/fixture/fixture-source.adapter';
 
 /**
@@ -500,6 +501,34 @@ describe('Deduplication merge and redirect (e2e)', () => {
       expect(detail.redirectedFromJobId).toBe(loser.jobId);
       // Both source listings are reachable from the survivor (§6.3).
       expect(detail.sources).toHaveLength(2);
+    });
+
+    // M10.2 extends the line above from "it still loads" to "it says the right
+    // thing": the saved *list* follows the redirect too, so a user does not have
+    // to open an entry to find out that its vacancy moved.
+    it('shows the survivor in the saved list after the merge', async () => {
+      const loser = await ingest(posting());
+      const winner = await ingest(
+        posting({
+          externalId: `${EXTERNAL_ID_PREFIX}002`,
+          url: 'https://fixtures.juniorjob.local/jobs/t4-002',
+          title: 'Backend Engineer (m/w/d)',
+          description: RICH_AD,
+        }),
+      );
+      await prisma.savedJob.create({ data: { userId, jobId: loser.jobId } });
+
+      await merger.merge(loser.jobId, winner.jobId);
+
+      const page = await app.get(SavedJobsService).list(userId, 1, 20);
+
+      expect(page.total).toBe(1);
+      const [item] = page.items;
+      // The entry is still the row the user created; the card is the survivor's.
+      expect(item.jobId).toBe(loser.jobId);
+      expect(item.job.id).toBe(winner.jobId);
+      expect(item.redirectedToJobId).toBe(winner.jobId);
+      expect(item.isActive).toBe(true);
     });
   });
 });

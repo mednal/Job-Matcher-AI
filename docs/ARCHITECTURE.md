@@ -170,11 +170,16 @@ Rules enforced by review:
                                                     │
                                                  scoring
 
-   auth ──► users ──► profiles          search ──► jobs ◄── saved-jobs
+   auth ──► users ──► profiles ◄──────── search ──► jobs ◄── saved-jobs
                                                     ▲
                                         (reads canonical jobs written
                                          by the ingestion pipeline)
 ```
+
+`search → profiles` is §6.5's query-time personalization: the search module reads
+the caller's saved preferences through `ProfilesService`, which owns
+`prisma.profile`, and blends them into the ranking. It is a read, never a write,
+and it never narrows a result set.
 
 `ingestion` depends on the pipeline modules; the pipeline modules do not depend on
 each other except `classification → scoring`. The read side (`search`, `jobs`,
@@ -494,7 +499,9 @@ already holds, and would move the row tier 2 finds for the original spelling.
 Because tier 3 is biased toward splitting, false splits are expected and must stay
 correctable. Merging two existing `Job` rows sets `mergedIntoJobId` on the loser
 rather than deleting it, so search excludes it (`mergedIntoJobId IS NULL`) while any
-`SavedJob` pointing at it still resolves through the redirect. The loser's postings
+`SavedJob` pointing at it still resolves through the redirect — both `GET /jobs/:id`
+and `GET /saved-jobs` walk the chain when they are read, and the saved row itself is
+never rewritten (M10.2). The loser's postings
 move to the survivor and the survivor's canonical values are re-derived over them;
 the loser keeps its `dedupHash`, which is what sends later postings of the losing
 spelling through the redirect instead of into a third `Job`.
