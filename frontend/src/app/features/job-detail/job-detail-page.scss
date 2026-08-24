@@ -1,0 +1,168 @@
+.job-detail__back {
+  margin-bottom: var(--space-4);
+  font-size: var(--font-size-sm);
+}
+
+.job-detail__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.job-detail__identity {
+  min-width: 0;
+}
+
+.job-detail__title {
+  margin-bottom: var(--space-2);
+}
+
+.job-detail__company {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.job-detail__employer {
+  color: var(--color-text);
+  font-weight: var(--font-weight-medium);
+}
+
+.job-detail__separator {
+  margin: 0 var(--space-2);
+}
+
+/* A posting no source lists any more is still worth reading — it is why a saved
+   job does not vanish — but the reader has to be told before they spend time on
+   it, so this sits above the facts rather than in a footnote. */
+.job-detail__stale {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-caution);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.job-detail__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  list-style: none;
+}
+
+.job-detail__facts li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.job-detail__fact-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.job-detail__technologies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-5);
+  padding: 0;
+  list-style: none;
+}
+
+.job-detail__section {
+  margin-bottom: var(--space-6);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.job-detail__section h2 {
+  font-size: var(--font-size-lg);
+}
+
+.job-detail__note {
+  margin: 0 0 var(--space-4);
+  max-width: 70ch;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.job-detail__note:last-child {
+  margin-bottom: 0;
+}
+
+.job-detail__summary {
+  max-width: 70ch;
+}
+
+/* The body is plain text split on its blank lines, so the single newlines a
+   requirements list is written with survive as line breaks. */
+.job-detail__description {
+  max-width: 70ch;
+  white-space: pre-line;
+}
+
+.job-detail__description p:last-child {
+  margin-bottom: 0;
+}
+
+.job-detail__sources {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.job-detail__source-link {
+  font-weight: var(--font-weight-medium);
+}
+
+.job-detail__attribution {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.job-detail__error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-negative);
+  border-radius: var(--radius-md);
+  background: #fdf2f1;
+  color: var(--color-negative);
+}
+
+.job-detail__error-message {
+  margin: 0;
+}
+
+.job-detail__retry {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid currentcolor;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
