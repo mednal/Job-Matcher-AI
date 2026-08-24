@@ -1,0 +1,75 @@
+<div class="job-card__head">
+  <div class="job-card__identity">
+    <h3 class="job-card__title">
+      <a [routerLink]="['/jobs', job().id]">{{ job().title }}</a>
+    </h3>
+    <p class="job-card__company">
+      <span class="job-card__employer">{{ job().companyName }}</span>
+      <span class="job-card__separator" aria-hidden="true">·</span>
+      <span>{{ location() }}</span>
+    </p>
+  </div>
+
+  <div class="job-card__aside">
+    <app-junior-score-badge
+      [level]="job().juniorLevel"
+      [score]="job().juniorScore"
+      [evidenceShown]="evidenceShown()"
+    />
+    <!-- M11.8 drops the save control in here; the card stays unaware of it. -->
+    <ng-content select="[card-actions]" />
+  </div>
+</div>
+
+<ul class="job-card__facts">
+  <li>
+    <span class="job-card__fact-label">Experience</span>
+    <span>{{ experience() ?? 'Not stated' }}</span>
+  </li>
+  @if (workplace(); as workplaceLabel) {
+    <li>
+      <span class="job-card__fact-label">Workplace</span>
+      <span>{{ workplaceLabel }}</span>
+    </li>
+  }
+  @if (employment(); as employmentLabel) {
+    <li>
+      <span class="job-card__fact-label">Contract</span>
+      <span>{{ employmentLabel }}</span>
+    </li>
+  }
+  @if (posted(); as postedOn) {
+    <li>
+      <span class="job-card__fact-label">{{ postedOn.prefix }}</span>
+      <span>{{ postedOn.label }}</span>
+    </li>
+  }
+</ul>
+
+@if (technologies().length > 0) {
+  <ul class="job-card__technologies">
+    @for (technology of technologies(); track technology) {
+      <li>
+        <app-chip tone="brand">{{ technology }}</app-chip>
+      </li>
+    }
+    @if (hiddenTechnologyCount() > 0) {
+      <li>
+        <app-chip>+{{ hiddenTechnologyCount() }} more</app-chip>
+      </li>
+    }
+  </ul>
+}
+
+@if (evidenceShown()) {
+  <app-signal-list
+    class="job-card__signals"
+    [positive]="positiveSignals()"
+    [negative]="negativeSignals()"
+    [limit]="3"
+  />
+}
+
+@if (job().sourceCount > 1) {
+  <p class="job-card__sources">Also listed on {{ job().sourceCount }} sources</p>
+}

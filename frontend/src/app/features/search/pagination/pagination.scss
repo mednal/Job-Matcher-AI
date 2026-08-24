@@ -1,0 +1,29 @@
+:host {
+  display: block;
+}
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.pagination__status {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.pagination__page {
+  white-space: nowrap;
+}
+
+.pagination__controls {
+  display: flex;
+  gap: var(--space-2);
+}

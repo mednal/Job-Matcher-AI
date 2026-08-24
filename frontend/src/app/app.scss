@@ -1,0 +1,164 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--space-2);
+  top: -3rem;
+  z-index: 10;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  transition: top 0.15s ease;
+}
+
+.skip-link:focus-visible {
+  top: var(--space-2);
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-header__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  width: 100%;
+  max-width: var(--layout-max-width);
+  min-height: var(--header-height);
+  margin: 0 auto;
+  padding: 0 var(--space-4);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+.brand:hover {
+  text-decoration: none;
+}
+
+.brand__mark {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-brand);
+  color: #fff;
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.02em;
+}
+
+.app-nav {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.app-nav__link {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.app-nav__link:hover {
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.app-nav__link--active {
+  background: var(--color-brand-soft);
+  color: var(--color-brand-strong);
+}
+
+.app-account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+  font-size: var(--font-size-sm);
+}
+
+/* The log-out control is a <button>: it changes state rather than addressing a
+   page, and a link that is not a destination is a lie to a screen reader. These
+   rules undo the button's chrome so it sits beside the nav links unchanged. */
+.app-account__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-brand);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.app-account__link:hover {
+  text-decoration: underline;
+}
+
+.app-account__email {
+  color: var(--color-text-muted);
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-account__cta {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-brand);
+  color: #fff;
+  font-weight: var(--font-weight-medium);
+}
+
+.app-account__cta:hover {
+  background: var(--color-brand-strong);
+  text-decoration: none;
+}
+
+.app-main {
+  flex: 1;
+}
+
+.app-footer {
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.app-footer__note {
+  max-width: var(--layout-max-width);
+  margin: 0 auto;
+  padding: var(--space-4);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+@media (max-width: 40rem) {
+  .app-header__inner {
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    padding-block: var(--space-3);
+  }
+
+  .app-nav {
+    order: 3;
+    width: 100%;
+  }
+}

@@ -38,7 +38,7 @@ As of the last update to this file:
 | ---- | ----- |
 | Product / architecture / database design | Written (`PRODUCT.md`, `ARCHITECTURE.md`, `DATABASE.md`). D1–D7 closed; D7 **revised 2026-08-21** to exclude salary, company entities, job taxonomy, and application tracking from the MVP schema (`DATABASE.md` §3.4) |
 | Source adapter architecture | Designed and approved 2026-08-21 (`ARCHITECTURE.md` §6.1, Phase 5 decisions A1–A7). **M5.1–M5.3 implemented 2026-08-22**: `modules/sources/` holds the `JobSourceAdapter` contract, the `SOURCE_ADAPTERS` token, `SourceRegistryService` (descriptors validated at construction, so an invalid or duplicated one aborts boot), the `PaginatedSourceAdapter` base that owns pagination, the `SourceError` hierarchy, the shared `SourceHttpClient` (truthful User-Agent, per-source rate limiting, 5xx/network-only retries, 401/403/429 and block pages as stop conditions), the `describeAdapterContract` conformance suite, and `FixtureSourceAdapter`; `modules/ingestion/` holds M5.3's raw stage — content-hashed `RawJobDocument` writes, canonicalization with `volatilePayloadPaths`, `IngestionRun` bookkeeping, the `RUNNING` guard and the stale-run reaper. `sources.imports.spec.ts` enforces the §4.2 and §7.3 boundaries mechanically. **M5.4 implemented 2026-08-23**, closing the sequencing decision: `JobSourceAdapter` gained `toRawFields`, the payload-to-shared-vocabulary mapping that §4.2 allows only an adapter to perform; `ingestion-plan.ts` holds §6's seeds; `IngestionService` resolves the plan and isolates one source's failure from the next; `JobPipelineService` chains normalize → dedupe → classify → score for one posting; and `RawIngestionService` gained the seed walk and the `JOB_PIPELINE` seam. M5.5–M5.6 follow it. `docs/SOURCES.md` still records **no reviewed sources** — the fixture adapter is not one, and the register now says so explicitly |
-| Angular workspace | Scaffolded only — default welcome page, no routes, no app code |
+| Angular workspace | **Phase 11 in progress, M11.1–M11.6 done.** M11.2 replaced the welcome page with a shell (header, nav, router outlet, footer carrying the "not a prediction of getting hired" line) over a lazy route table, with the design tokens as CSS custom properties on `:root`. M11.3 built `core/` — API models, four typed clients, the token-attaching interceptor with a single shared refresh-on-401, `AuthService` and the auth guard. M11.4 added the login and register screens, a sanitized `redirectTo`, and a session-aware header. **M11.5 adds `shared/`**: five `ui/` primitives applied as attributes to native elements, `junior-score-badge`, `signal-list` and the `job-card` that composes them. §6.5's rule is structural rather than a convention — the badge shows the number only when the caller states its evidence is on the page, and `job-card` derives that from the signals it was given rather than trusting anyone; the search list, whose `JobSummary` carries no signals, therefore shows the `JuniorLevel` band, which is what §6.5 prescribes. `score-naming.spec.ts` is now mirrored on the frontend over `.ts` and `.html`, and `signal-labels.spec.ts` reads the backend's `SIGNAL_WEIGHTS` so the two vocabularies cannot drift. **M11.6 adds the search page 2026-08-24**: `features/search/` — the query box, the collapsible filter panel, the result list and previous/next pagination, with `search-query-params.ts` as the whole of the URL mapping. The address bar holds the search and nothing else does: the route's params are parsed into a `SearchQuery`, `rxResource` derives the request from it, and every control navigates rather than setting local state, so a reload and a shared link run the same path a fresh visit runs. Parsing drops an unusable parameter instead of the URL around it, never writes a value the API already defaults to, and never truncates a country code. The panel is a draft over that truth — it neither calls the API nor navigates — and `sort` stays the page's, so applying a filter cannot reset an ordering. M11.7–M11.9 are the remaining pages. 231 tests across 24 suites |
 | NestJS backend | Config, validation pipe, CORS, `/api/v1/health` (now `@Public()`), plus a working `AuthModule` and `UsersModule`: register, login, argon2id hashing, JWT access tokens, refresh-token rotation/revocation, logout, a global `JwtAuthGuard`, and `GET /users/me`. M3.5/M3.6 close Phase 3: a second global `RolesGuard` with a `@Roles()` decorator (metadata opt-in, role read from the database rather than the token so a demotion takes effect immediately) and a `ProfilesModule` serving `GET`/`PUT /profiles/me` (`PUT` replaces rather than merges; a user who has never saved one gets an empty profile, not a 404; ownership is structural because no route names a profile by id). **Phase 3 is complete.** No admin route exists yet to point `RolesGuard` at — the first is M5.5's ingestion trigger — so its e2e declares a test-only `@Roles(ADMIN)` controller, keeping D4's "no admin surface" intact. M4.1/M4.2 add `JobsModule`: `GET /jobs/:id` (detail with classification evidence, every source URL and its attribution, resolving `mergedIntoJobId` through a redirect) and `GET /jobs` (the `{ items, page, pageSize, total }` envelope, `pageSize` ≤ 50, inactive and merged jobs excluded), both public, plus the shared pagination DTOs in `common/dto/`. **Phase 4 is complete** — the read side serves the seeded jobs, so Phase 11 is unblocked. **M9.1 opens Phase 9**: `SearchModule` serves `GET /jobs/search` (public), with `search.repository.ts` holding the only raw SQL on the read side — a `websearch_to_tsquery` against `Job.searchVector` built through the *same* per-row `CASE` on `language` the generated column was written with, ranked by `ts_rank` over the write-time A/B/C weights and paged in the shared envelope. `textSearchConfiguration` moved from `normalization/language.ts` to `common/utils/` (the `ascii-fold` precedent) so the read side does not import a pipeline module, and a unit test reads M2.6's migration to catch drift. **M9.2 adds the nine filters of §8.1** — `technologies[]` (GIN overlap, so a second chip widens), `locations[]` (case-insensitive substring, ORed, wildcards escaped), `countryCode`, `workplaceType[]`, `employmentType[]`, `juniorLevel[]` (enum `IN` with the cast on the parameters so the level index survives), `minJuniorScore`, `maxYearsRequired` and `postedWithinDays` — each a separate `Prisma.Sql` fragment ANDed onto the structural exclusion, so an unrequested filter contributes no SQL. A `NULL` column is answered two different ways on purpose: `maxYearsRequired` keeps a job that states no minimum (absence of a barrier) while `minJuniorScore` and the enum facets drop one that states nothing (absence of evidence). Comma-splitting is allowed only for slugs and enum members, never for free-text locations. **M9.3 closes the ordering**: `sort` accepts `relevance` (the default), `juniorScore` (`NULLS LAST`, or the highest scores would open with the unscored) and `postedAt`, each ending in M4.2's `effectivePostedAt DESC, id DESC` total order; `relevance` blends text rank, `juniorScore/100` and a 30-day recency half-life at `0.5/0.35/0.15`, tuned in M12.3. `PRODUCT.md` §8's default result set hides `EXPERIENCED` and `CLEARLY_EXPERIENCED`, with naming a level in `juniorLevel[]` as the opt-in and an explicit `IS NULL` branch so an unclassified job is not silently dropped by three-valued logic. **M9.4 closes the envelope and validation**, and fixed a real 500 while doing it: `page` had no upper bound, so `?page=1e20` passed validation (`Number.isInteger(1e20)` is `true`), became an `OFFSET` past PostgreSQL's `bigint` and failed inside the driver — on `/jobs` as well, since both share `PaginationQuery`. `MAX_PAGE = 200` bounds it at 10 000 results deep, and the shared DTO now has its own spec (`common/dto/pagination.query.spec.ts`) rather than being asserted only through whichever endpoint happened to exercise it. **M9.5 closes Phase 9** with query-time profile-fit ranking: `/jobs/search` moved from `@Public()` to a new `@OptionalAuth()` — the guard M4.2 said this would need, since `@Public()` returns before a token is read and left a signed-in caller anonymous — and `relevance` gains a fourth term worth `0.2`, with the other three scaled by `0.8` so an anonymous request is ranked by the identical expression as before. Fit follows the token, not a parameter (§8.1 declares none, so `?profileFit=` is still a 400): technology overlap saturating at three matches, ORed with a binary hit on the profile's free-text `locations` or its `countryCodes`. It ranks and never filters — two profiles get the same jobs and the same `total` in a different order — and the stored `juniorScore` is never written. An empty profile, an anonymous request and an explicit `sort` all skip the profile read entirely. **Phase 9 is complete.** **M10.1 opens Phase 10**: `SavedJobsModule` serves `GET`/`POST /saved-jobs` and `DELETE /saved-jobs/:jobId`, all JWT-only — a collection belongs to an account, so unlike `/jobs/search` there is no anonymous answer. Ownership is structural, as in `profiles/`: every query is keyed by the token's `userId`, no route names a `SavedJob` by its own id, and the row id is not even in the response. Saving is an `upsert` on the `(userId, jobId)` unique with an empty `update`, so idempotency is a database property rather than a racy read-then-write and `createdAt` stays at the first save; deleting is a `deleteMany` scoped by user, so another account's row and one that never existed are the same 404 by construction. `DELETE` returns 404 rather than an idempotent 204 — success for a delete that deleted nothing is a lie the client cannot detect. Merged and deactivated jobs are saved and listed rather than filtered (filtering would unsave them on the user's behalf); resolving the redirect and flagging the inactive one is M10.2. `JobsService` gained `exists()` and exported `JOB_SUMMARY_SELECT`, so `prisma.job` keeps one owner and the saved list renders the same card as search. **M10.2 closes Phase 10**: a saved job outlives what the pipeline later does to the job it names. The list resolves `mergedIntoJobId` at read time through a new `JobsService.findCanonicalSummaries()` — M7.4 deliberately never rewrites a `SavedJob`, so the walk belongs on the read side — and flags a deactivated job with `isActive` rather than hiding it. `jobId` keeps reporting the id that was saved, because it is the row the user owns and the id `DELETE` takes, while `job` carries the survivor's card and `redirectedToJobId` names it; a broken merge chain falls back to the row as stored rather than opening a gap in someone's collection. Only rows that are actually tombstones cost a second query. **Phase 10 is complete** |
 | PostgreSQL / Prisma | Postgres 18 runs in Docker on host port 5433. `prisma/schema.prisma` now holds `User`, `Profile`, `RefreshToken`, `UserRole`, `WorkplaceType` (M2.2's slice, migration `20260821171157_add_user_auth_tables`) plus `JobSource`, `IngestionRun`, `RawJobDocument`, `AccessMethod`, `IngestionStatus`, `IngestionTrigger` (M2.3's slice, migration `20260821180642_add_source_ingestion_tables`) plus `JobPosting`, `Job` and `EmploymentType` (M2.4's slice, migration `20260821182202_add_job_tables`) plus `JobClassification`, `SavedJob`, `JuniorLevel` and `Job`'s denormalized classification block (M2.5's slice, migration `20260821184731_add_classification_saved_job_tables`, which also hand-writes the partial unique index enforcing one current classification per job). Every MVP table of `DATABASE.md` §3 now exists. M2.6's slice (migration `20260821190950_add_search_indexes_and_checks`, commit `f3cb483`) adds the raw SQL of §5: the `pg_trgm` extension, the generated `Job.searchVector` column, GIN indexes on `searchVector`, `technologies` and `normalizedTitle` (trigram), the partial `Job_active_search_idx`, and all four CHECK constraints — so §7's index inventory is 25/25 complete. The three GIN indexes are also declared in `schema.prisma` purely to stop Prisma proposing to drop them; see M2.6's fragile-point note before running `prisma migrate dev`. M2.7 closes Phase 2: `prisma/seed.ts` + `prisma/seed-data.ts`, run with `npm run db:seed`, write a demo user, a demo admin, two fixture sources and 10 fixture jobs with one classification each, idempotently. **Phase 2 is complete.** |
 | Development fixtures | Seeded (M2.7). 10 jobs covering all five `JuniorLevel` bands, English and German, the adversarial "Junior title / 5+ years body" case, a two-source job, an inactive job and a merged-away job. Hand-written, not classifier output — stamped `classifierVersion = "seed-fixture-1.0"`. This is the corpus Phases 6–8 should be checked against |
@@ -2319,36 +2319,353 @@ Goal: the product is usable in a browser.
 - Verify: `npm start` in `frontend/` serves the app; `npm test` runs.
 
 ### M11.2 — Application shell
-- [ ] Replace the default welcome page with a real shell (header, nav, router outlet)
-- [ ] Route table with lazy `loadComponent` / `loadChildren` for every feature
-- [ ] Global styles: tokens, spacing, typography
+- [x] Replace the default welcome page with a real shell (header, nav, router outlet)
+- [x] Route table with lazy `loadComponent` / `loadChildren` for every feature
+- [x] Global styles: tokens, spacing, typography
 - Verify: navigating between two lazy routes loads separate chunks.
+- Verified 2026-08-23: `app.ts`/`app.html`/`app.scss` are now the shell, `app.routes.ts`
+  plus `features/auth/auth.routes.ts` are the route table, `styles.scss` holds the
+  tokens, and six placeholder pages under `features/` exist only to be routed to.
+  `app.spec.ts` (4 cases) and a new `app.routes.spec.ts` (4) — 8 frontend tests.
+  - **The build is the verification.** `npm run build` emits eight lazy chunks —
+    `search-page`, `job-detail-page`, `saved-jobs-page`, `profile-page`,
+    `login-page`, `register-page`, `not-found-page` and `auth-routes` — against a
+    227 kB initial chunk. Nothing routed is in the initial bundle.
+  - **`auth` is the one `loadChildren`**, the rest are `loadComponent`. Auth is the
+    only area with two sibling screens and a shared prefix, so it is the only one
+    where a child route table earns its file; using `loadChildren` everywhere would
+    be a routes file per page with a single entry in it.
+  - **The placeholder pages are deliberately empty.** Each is a heading and one
+    sentence naming the milestone that fills it in (M11.4 and M11.6–M11.9). A route
+    that cannot resolve a component is not a route table, so they exist — but
+    building any of their real content here would be building M11.6 early.
+  - **A catch-all `**` route renders a 404 page rather than a blank outlet**, and it
+    is last, where the router's first-match order requires it. `app.routes.spec.ts`
+    pins that position: moving it up silently swallows every route below it.
+  - **Tokens are CSS custom properties on `:root`, not SCSS variables.** Colour,
+    type scale, a 4px spacing scale, radii, shadows and the layout width are read
+    at runtime, so a component's `.scss` and the global sheet cannot drift into two
+    palettes, and M11.5's `ui/` primitives inherit them without importing anything.
+    Light only — no dark theme, because nothing asks for one and every token would
+    then have two values to keep honest.
+  - **`.page` is the only global layout class.** Page width and the space under the
+    header are defined once; the alternative is the same container copied into six
+    feature stylesheets and diverging on the seventh.
+  - **The footer carries the "not a prediction of getting hired" line** on every
+    screen, and a test asserts it. `PRODUCT.md` §8 and M13.4 require the score never
+    to read as a hiring chance; putting the sentence in the shell means it cannot be
+    forgotten on a page that shows a score.
+  - Each route sets `title`, so the browser tab and history are meaningful before
+    any page has content. Nav uses `routerLinkActive` without `exact`, so `/jobs/:id`
+    keeps **Search** highlighted — a detail page reached from a search still shows
+    where the user is.
+  - Checks after the change: `npm test` 2 suites / 8 tests pass, `npm run build`
+    clean, Prettier-clean on every file touched, `npm start` serves the shell at
+    `localhost:4200`.
 
 ### M11.3 — Core layer
-- [ ] `core/models` — API contract interfaces mirroring the response DTOs
-- [ ] `core/api` — typed HTTP clients for jobs, profiles, saved jobs, auth
-- [ ] `core/interceptors` — attach the access token, normalize errors, refresh once on 401
-- [ ] `core/auth` — signal-based `AuthService` plus an auth guard
+- [x] `core/models` — API contract interfaces mirroring the response DTOs
+- [x] `core/api` — typed HTTP clients for jobs, profiles, saved jobs, auth
+- [x] `core/interceptors` — attach the access token, normalize errors, refresh once on 401
+- [x] `core/auth` — signal-based `AuthService` plus an auth guard
 - Verify: Vitest covers token attachment, the refresh-on-401 path, and search
   filter serialization.
+- Verified 2026-08-23: `core/` holds the four folders of `ARCHITECTURE.md` §10 —
+  eight model files, four API clients, two functional interceptors, and
+  `TokenStorage` / `AuthService` / `authGuard`. 51 frontend tests across 8 suites,
+  up from 8; `npm run build` still emits the same eight lazy chunks against a
+  254 kB initial bundle.
+  - **Refreshing once is structural, not a counter.** The replayed request is
+    issued through the interceptor's own `next`, not through `HttpClient`, so it
+    cannot re-enter the interceptor: a second 401 has nowhere to recurse to and
+    propagates to the caller. A retry counter would have to be threaded through a
+    header or a context token and could be got wrong; this cannot.
+  - **The in-flight refresh is shared.** Refresh tokens *rotate* — the response
+    carries a new one and retires the sent one — so two requests failing 401
+    together must not each call `/auth/refresh`. The second joins the first's
+    observable (`shareReplay`, `refCount: false`), and a test pins that two
+    simultaneous failures produce exactly one refresh call.
+  - **A 401 on an anonymous request is not refreshed.** It means the route needs
+    a login, not that a token went stale. Refreshing there would sign the user out
+    of a session they never had, and `/auth/login`, `/auth/register` and
+    `/auth/refresh` never receive a bearer header at all — but `/auth/logout`
+    does, because it is authenticated and the backend scopes revocation to the
+    caller.
+  - **`errorInterceptor` is registered first, so it is outermost.** That leaves
+    `authInterceptor` seeing the raw `HttpErrorResponse` it needs to recognise a
+    401, and a request that recovers through a refresh never produces an error at
+    all. Reversing the two would silently kill the refresh path — the reason the
+    order is commented at the provider.
+  - **`ApiError` is the only error a component sees.** NestJS answers
+    `{ statusCode, message, error }`, where `message` is a string for a thrown
+    exception and a `string[]` for a validation failure; both are read and the
+    whole array is kept, because a form needs every violated rule. An
+    unrecognized body falls back to the status text rather than rendering
+    `[object Object]` at the user.
+  - **Dates are typed `string`, not `Date`.** `HttpClient` does not revive them,
+    so `Date` would be a type that lies about what is in the object. `IsoDateString`
+    names the intent and a component constructs a `Date` where it formats one.
+  - **Enums are union types with a `const` array**, not TypeScript `enum`s: the
+    wire values are plain strings, and the filter panels of M11.6 need to *list*
+    the members, which a second hand-written list would drift from.
+  - **`isAuthenticated` is derived from the token's presence, not its validity.**
+    A client cannot verify a signature, and an expired token is still the
+    difference between showing the app and showing the login form — expiry is
+    discovered on the next request, where the interceptor refreshes or clears the
+    session.
+  - **Tokens live in `localStorage`**, wrapped in try/catch because a browser with
+    site data blocked *throws* rather than returning null. The backend returns
+    tokens in a JSON body rather than setting a cookie, so a JS-readable store is
+    the only option that survives a reload; moving to httpOnly cookies is a
+    backend decision, not one the frontend can take alone.
+  - **`toSearchParams` repeats the key for every list value** and never
+    comma-joins, because `locations` may legitimately contain "Berlin, Germany".
+    Cleared fields are dropped rather than sent empty — `?technologies=` would
+    read as a filter — while `0` survives, since `minJuniorScore=0` is a filter
+    and not an absence.
+  - **`/saved` and `/profile` are now guarded**; search and job detail are
+    deliberately not, because the product must be evaluable before signup. The
+    guard returns a `UrlTree` carrying `redirectTo`, so M11.4 can return the user
+    to the page they were opening in a single navigation.
+  - **`API_BASE_URL` is an injection token** fed by `environments/`, with
+    `environment.model.ts` holding the shared interface — a type exported from
+    `environment.ts` would vanish in the development build, where that file is the
+    one `fileReplacements` swaps out. Production defaults to same-origin `/api/v1`;
+    development points at `localhost:3000`.
+  - Checks after the change: `npm test` 8 suites / 51 tests pass, `npm run build`
+    clean, Prettier-clean on every file touched.
 
 ### M11.4 — Auth screens
-- [ ] Login and register forms with validation and server-error display
-- [ ] Redirect to the intended route after login; the guard protects private routes
+- [x] Login and register forms with validation and server-error display
+- [x] Redirect to the intended route after login; the guard protects private routes
 - Verify: component tests on validation; a manual register → login → search flow.
+- Verified 2026-08-23: `features/auth/` now holds two reactive forms sharing one
+  stylesheet, `field-errors.ts` and `redirect-target.ts`. 79 frontend tests across
+  11 suites, up from 51. The flow was exercised against the running backend with
+  `curl`: register → 201 with tokens, the same email again → 409
+  `"Email already registered"`, a short password → 400 with a message array,
+  a wrong password → 401 `"Invalid email or password"`, `/users/me` → the account,
+  anonymous `/jobs/search` → 200, and `/saved-jobs` without a token → 401. Those
+  are exactly the four response shapes the forms render.
+  - **The forms mirror the backend's validators, neither looser nor stricter.**
+    Looser turns a fixable field into a 400 the user has to decode; stricter
+    refuses input the API would have taken. That is why login validates the
+    password as *required only*: the 10-character minimum is a `RegisterDto` rule,
+    and enforcing it on login would refuse to even attempt an older account's
+    password — and would tell an attacker the password's shape before they sent one.
+  - **Nothing is marked wrong until the field is touched or the form is
+    submitted.** A form that greets the user with three errors before they have
+    typed is telling them off for not having started. Submitting blank calls
+    `markAllAsTouched`, because a silent refusal reads as a broken button.
+  - **One message per field, not all of them.** "is required" and "must be at
+    least 10 characters" together is noise; the first unmet rule is the one to fix.
+  - **`redirectTo` is sanitized, and this is the security-relevant part of the
+    milestone.** The value comes from the query string, so
+    `/auth/login?redirectTo=https://evil.example` would otherwise be an open
+    redirect that sends a user off-site *at the moment they have just signed in*.
+    `safeRedirectTarget` accepts only a same-origin path — rejecting `//host`,
+    `/\host`, anything containing `://`, and control characters, which browsers
+    strip before resolving a URL — and falls back to `/jobs` rather than refusing
+    a valid login.
+  - **Registration signs the account in on the spot**, because `/auth/register`
+    returns the same token pair `/auth/login` does. Sending someone who has just
+    proved their password to a login form to retype it is a step that exists for
+    nothing. Both screens carry `redirectTo` across the link between them, so
+    "actually, I need an account" does not lose the destination.
+  - **Server messages are rendered verbatim, all of them.** A validation failure
+    returns one per broken rule and the list is shown; a refused login returns the
+    single deliberately ambiguous "Invalid email or password", which is what keeps
+    the form from being an account-enumeration oracle. The pages are written
+    against `ApiError`, so their specs provide `errorInterceptor` — the same chain
+    the application does, rather than a hand-shaped error object.
+  - **The shell became session-aware, which was not in the milestone text but is
+    implied by it.** Without it there is no way to sign out, and a signed-in user
+    is still invited to log in. The header now shows the account email and a
+    `Log out` **button** — a control that changes state is not a link — and the
+    shell asks `/users/me` once when tokens are present but the user is not
+    loaded, which is what a reload leaves behind. A failure there costs the header
+    an email address and nothing else.
+  - **The initial bundle grew 256 kB → 272 kB** and `@angular/forms` is *not* part
+    of it: the build check confirms `formControlName` appears only in the login,
+    register and their shared lazy chunk. The growth is the eagerly-referenced
+    session code in the shell.
+  - Checks after the change: `npm test` 11 suites / 79 tests pass, `npm run build`
+    clean, Prettier-clean on every file touched, and the live-API contract check
+    above. Not done: a click-through in a browser — the automated coverage and the
+    `curl` flow stand in for it.
 
 ### M11.5 — Shared components
-- [ ] `junior-score-badge` — labelled **"Junior Match"**, never a bare percentage
-- [ ] `signal-list` — positive signals and potential concerns with their evidence
-- [ ] `job-card` composing both; `ui/` primitives (button, input, chip, empty-state, spinner)
+- [x] `junior-score-badge` — labelled **"Junior Match"**, never a bare percentage
+- [x] `signal-list` — positive signals and potential concerns with their evidence
+- [x] `job-card` composing both; `ui/` primitives (button, input, chip, empty-state, spinner)
 - Verify: component tests assert the score never renders without its evidence and
   that the label is correct.
+- Verified 2026-08-23: `shared/` now holds the four folders of `ARCHITECTURE.md` §10
+  — `ui/` (five primitives), `junior-score-badge/`, `signal-list/` and `job-card/` —
+  plus `enum-labels.ts`. 148 frontend tests across 19 suites, up from 79 across 11.
+  `npm run build` is clean and the initial bundle is unchanged at 272 kB: nothing
+  routed imports these yet, which is what keeps M11.6–M11.8 from having been
+  started here.
+  - **The score cannot be rendered without its evidence, structurally.**
+    `evidenceShown` is the caller asserting that a `signal-list` sits next to the
+    badge; without it the badge falls back to the `JuniorLevel` band, which §6.5
+    names as the right thing to show when the evidence cannot be. A page gets a bare
+    percentage only by asserting the opposite of the truth — never by forgetting
+    something. `job-card` does not even take the assertion: it composes both
+    components, works out for itself whether any evidence will render, and hands
+    that same answer to the badge, so the two cannot fall out of step.
+  - **A search result therefore shows the band, not the number, and that is
+    correct.** `JobSummary` carries `juniorLevel` and `juniorScore` but no signals —
+    the list projections deliberately omit them — so there is no evidence to put
+    beside a percentage on a result card. §6.5's escape clause covers exactly this
+    case. The signals are component *inputs* rather than fields read off the job, so
+    the detail page (M11.7), or a list endpoint that grows them later, gets the
+    number without this component changing.
+  - **The label is not an input.** "Junior Match" is hard-coded in the template, so
+    no caller can retitle the number into a prediction. The screen-reader label says
+    "78 out of 100" rather than "78%", because a percent sign read aloud invites the
+    probability reading the rest of the wording is careful to avoid.
+  - **A level is required before the number is shown**, not only the evidence: the
+    band is the number's context, and "94%" over "Not yet assessed" is a bare
+    percentage in all but name. The two always arrive together from the backend, so
+    this only decides what an inconsistent row looks like.
+  - **`@if (shownScore() !== null)`, not the aliasing form.** A score of `0` is a
+    real answer — `CLEARLY_EXPERIENCED` bottoms out there — and `@if (x; as y)`
+    treats it as absent, which would have silently dropped the number on the
+    worst-fitting jobs. A test pins it.
+  - **`signal-list` drops any signal with no excerpt.** In practice §5.3 guarantees
+    there are none; it is a floor rather than a workaround, because a signal without
+    the posting's own words is a claim the reader cannot check, and being able to
+    argue with the classification is the whole point of showing signals. The same
+    function answers "may the badge show the number?", so an empty list and a hidden
+    score are one decision.
+  - **The signal codes are worded here, and the wording is checked against the
+    backend.** The API sends `{ code, weight, evidence }` and no English.
+    `signal-labels.spec.ts` reads `backend/.../signal.ts`, extracts `SIGNAL_WEIGHTS`
+    and fails in both directions — a code with no wording, or wording for a code the
+    classifier no longer emits. An unknown code still renders (title-cased) rather
+    than being dropped, because a stored classification outlives the build that
+    wrote it and M8.7's AI stage may emit codes this build has never seen.
+  - **Every label describes the posting, never the reader's prospects** — "5+ years
+    of experience required", not "you are unlikely to qualify". The label sits
+    directly above a verbatim quote, and a label that editorialized would be putting
+    a claim next to evidence that does not support it. A test asserts the wording.
+  - **`score-naming.spec.ts` is now mirrored on the frontend**, over `.ts` *and*
+    `.html`. The backend's guard cannot see templates, and the template is where a
+    correctly-named `juniorScore` would become a hiring prediction. Comments are
+    stripped for the backend's reason, and three files are exempt by exact path
+    because the prohibited words are their subject matter.
+  - **The `ui/` primitives are attributes on native elements**, not wrappers:
+    `button[appButton]`, `input[appInput], textarea[appInput], select[appInput]`. A
+    wrapper would have to re-expose `type`, `disabled`, `form`, focus order and the
+    Enter/Space handling a screen reader relies on — and, on the input, reimplement
+    `ControlValueAccessor`, which is where the auth forms' `formControlName` would
+    break. `ui.spec.ts` pins both: the form control stays bound to the real element,
+    and a `<select>` keeps its `<option>`s (a component drops content it does not
+    project, so the template carries `<ng-content />` for that alone).
+  - **`job-card` is presentational and stays that way.** Saving is M11.8 and arrives
+    through a `card-actions` projection slot rather than by the card learning about
+    the saved-jobs API. `postedAt` and `effectivePostedAt` are labelled differently
+    — "Posted" only when the source stated a date, "First seen" otherwise — because
+    the fallback is when this system first saw the posting, and calling that
+    "Posted" would be inventing a fact.
+  - **`@types/node` was added as a devDependency** and `node` to `tsconfig.spec.json`'s
+    `types`, for the two file-reading specs. `tsconfig.app.json` still lists no types,
+    so a component cannot import `node:fs`. `import.meta.url` is not a `file:` URL
+    under `@angular/build:unit-test`, so both specs find the repository root by
+    walking up from the working directory instead.
+  - Not done, deliberately: the auth screens still carry their own field and button
+    rules in `auth-form.scss` rather than using the new primitives. Migrating them is
+    a change to a finished milestone's screens, not part of building the shared
+    layer; `auth-form.scss`'s comment still names it as the follow-up.
+  - Checks after the change: `npm test` 19 suites / 148 tests pass, `npm run build`
+    clean, Prettier-clean on every file touched.
 
 ### M11.6 — Search page
-- [ ] Query input, filter panel, result list, pagination
-- [ ] Filters mirrored into URL query params, so a search is shareable and survives reload
-- [ ] Loading, empty, and error states
+- [x] Query input, filter panel, result list, pagination
+- [x] Filters mirrored into URL query params, so a search is shareable and survives reload
+- [x] Loading, empty, and error states
 - Verify: reloading a filtered URL restores the same result set.
+- Verified 2026-08-24: `features/search/` now holds the three parts `ARCHITECTURE.md`
+  §10 names — the search page, the filter panel and the result list — plus
+  `search-query-params.ts`, `pagination/` and `multi-value-field/`. 231 frontend
+  tests across 24 suites, up from 183 across 20. `npm run build` is clean; the
+  initial bundle is unchanged at 284 kB and the whole page is one 46.6 kB lazy
+  chunk. `search-page.spec.ts` opens a URL carrying all thirteen parameters and
+  asserts the outgoing request, which is the `Verify:` line.
+  - **The URL is the search, and nothing else holds it.** `parseSearchQuery` reads
+    the route's `ParamMap`, `rxResource` derives the request from it, and every
+    control that changes the search navigates instead of setting local state. A
+    reload, the back button and a pasted link therefore run the *same* code path as
+    a fresh visit — shareability is a consequence of the structure rather than
+    save-and-restore code that could get it wrong.
+  - **Parsing never rejects a whole URL.** `?minJuniorScore=abc`, a `juniorLevel`
+    this build no longer knows, a page number past the API's cap: each drops that
+    one parameter and answers the rest. A hand-edited or stale link losing a filter
+    is recoverable; a blank page is not. Every bound is the one
+    `search.query.ts` declares, so what leaves is a request the API accepts rather
+    than a 400 the reader cannot act on.
+  - **Out of range is dropped, not clamped.** `?minJuniorScore=900` is a mangled
+    URL, not a request for 100, and answering a different question than the address
+    bar shows is worse than answering the unfiltered one. `countryCode` is the one
+    parameter that is never truncated to its cap either: cutting an alpha-3 code to
+    two characters turns `AUT` into Australia and `SVN` into El Salvador, so a wrong
+    country would be answered confidently. A test pins each.
+  - **A value equal to the API's own default is never written.** `sort=relevance`,
+    `page=1` and the default page size stay out of the address bar, so a shared link
+    says only what the user chose and the backend's defaults remain the single
+    definition of them — a link that pinned them would keep answering with
+    yesterday's default after the API changed its mind.
+  - **The panel is a draft; the URL is the truth.** `SearchFilters` takes the query
+    in and emits the edited one out; it never calls the API or the router, so it
+    cannot disagree with the address bar. An edit that is never submitted is
+    discarded by the next navigation, and paging reads the URL rather than the
+    panel — pressing Next cannot quietly apply a filter that was typed and never
+    applied. Both are tested.
+  - **`sort` is the page's, not the panel's.** The panel emits no ordering at all,
+    so applying a filter cannot silently reset one the user chose, and "Clear all"
+    never has to decide whether an ordering counts as a filter. Re-ordering and
+    applying a new filter set both return to page one, because page seven of one
+    ordering is a different set of jobs from page seven of another.
+  - **Naming a `juniorLevel` is the opt-in, and the panel says so.** `PRODUCT.md` §8
+    keeps `EXPERIENCED` and `CLEARLY_EXPERIENCED` out of the default result set, and
+    M9.3 made an explicit level filter the way back in. The panel offers all five
+    bands with a note explaining it; no separate "include experienced" control was
+    invented, because §8.1 declares no such parameter.
+  - **Technologies and locations are entered one value at a time**, as removable
+    chips. Both are lists where several values *widen* the search, and a
+    comma-separated box cannot express that for `locations` — "Berlin, Germany" is
+    one plausible value, which is exactly why the backend refuses to split that
+    parameter on commas. Enter adds a value rather than submitting the form, so a
+    typed filter cannot be lost to the submit that was meant to apply it.
+  - **`rxResource`, not a hand-rolled subscription.** One request per distinct
+    query, cancelled and replaced when the URL moves on, which is what keeps a late
+    response from overwriting a newer one. `value()` *throws* in the error state, so
+    the page reads it through `hasValue()` rather than guarding on `error()` and
+    trusting the two to stay in step.
+  - **The three states are distinguishable, and the empty one is specific.** "No
+    jobs match this search" reads differently depending on whether filters are on,
+    a query was typed, or neither — the last case is the honest one to show before
+    any adapter has been reviewed, since there is nothing ingested yet. A failed
+    search shows the server's own words with a retry that re-runs the same request
+    rather than sending the user back to rebuild their filters.
+  - **The result list is left in place while the next page loads**, with an
+    "Updating…" note, rather than being replaced by a spinner. The spinner is for
+    the first search only. A result set that flickered away on every filter change
+    would be harder to compare against, and the layout would jump.
+  - **A result card shows the band, not the number**, and that is M11.5's decision
+    unchanged: `JobSummary` carries no signals, so there is no evidence to put beside
+    a percentage. The page states what a Junior Match score is above the first
+    result, and `score-naming.spec.ts` covers the new templates automatically.
+  - **Pagination is previous/next only.** A numbered strip would have to decide how
+    to elide a hundred pages and answers a question nobody asks of a ranked list.
+    Next stops at page 200, the cap the API enforces — offering the button past it
+    would be offering a 400.
+  - Not done, deliberately: the job cards link to `/jobs/:id`, which is still M11.7's
+    placeholder, and they carry no save control — that is M11.8, and `job-card`
+    already has the `card-actions` slot waiting for it.
+  - Checks after the change: `npm test` 24 suites / 231 tests pass, `npm run build`
+    clean, Prettier-clean on every file touched.
 
 ### M11.7 — Job detail page
 - [ ] Full description and metadata — no salary display (D7)

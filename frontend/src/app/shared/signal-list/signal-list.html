@@ -1,0 +1,33 @@
+@if (!isEmpty()) {
+  <div class="signal-list__columns">
+    @if (positiveRows().length > 0) {
+      <section class="signal-list__group signal-list__group--positive">
+        <h4 class="signal-list__heading">Positive signals</h4>
+        <ul class="signal-list__items">
+          @for (row of positiveRows(); track row.code) {
+            <li class="signal-list__item">
+              <span class="signal-list__label">{{ row.label }}</span>
+              <!-- The excerpt is the posting's own words and is never paraphrased,
+                   so it is marked up as a quotation rather than as plain text. -->
+              <blockquote class="signal-list__evidence">{{ row.evidence }}</blockquote>
+            </li>
+          }
+        </ul>
+      </section>
+    }
+
+    @if (negativeRows().length > 0) {
+      <section class="signal-list__group signal-list__group--negative">
+        <h4 class="signal-list__heading">Potential concerns</h4>
+        <ul class="signal-list__items">
+          @for (row of negativeRows(); track row.code) {
+            <li class="signal-list__item">
+              <span class="signal-list__label">{{ row.label }}</span>
+              <blockquote class="signal-list__evidence">{{ row.evidence }}</blockquote>
+            </li>
+          }
+        </ul>
+      </section>
+    }
+  </div>
+}

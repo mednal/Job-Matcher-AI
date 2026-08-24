@@ -3,12 +3,11 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": [
-      "vitest/globals"
-    ]
+    /* `node` is here for two file-reading specs, not for application code:
+       `score-naming.spec.ts` walks `src/` and `signal-labels.spec.ts` reads the
+       backend's signal table to catch drift. `tsconfig.app.json` deliberately
+       does not list it, so a component still cannot import `node:fs`. */
+    "types": ["vitest/globals", "node"]
   },
-  "include": [
-    "src/**/*.d.ts",
-    "src/**/*.spec.ts"
-  ]
+  "include": ["src/**/*.d.ts", "src/**/*.spec.ts"]
 }

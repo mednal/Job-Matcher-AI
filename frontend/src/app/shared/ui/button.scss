@@ -1,0 +1,52 @@
+:host {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-tight);
+  cursor: pointer;
+}
+
+:host(.ui-button--block) {
+  width: 100%;
+}
+
+:host(.ui-button--primary) {
+  background: var(--color-brand);
+  color: #fff;
+}
+
+:host(.ui-button--primary:hover:not(:disabled)) {
+  background: var(--color-brand-strong);
+}
+
+:host(.ui-button--secondary) {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+:host(.ui-button--secondary:hover:not(:disabled)) {
+  background: var(--color-surface-muted);
+}
+
+:host(.ui-button--ghost) {
+  background: transparent;
+  color: var(--color-brand);
+}
+
+:host(.ui-button--ghost:hover:not(:disabled)) {
+  background: var(--color-brand-soft);
+}
+
+/* `cursor: progress` rather than `not-allowed`: a disabled button in this app is
+   almost always a submission in flight, not a refusal. */
+:host(:disabled) {
+  opacity: 0.6;
+  cursor: progress;
+}

@@ -1,0 +1,36 @@
+:host {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-tight);
+  white-space: nowrap;
+}
+
+:host(.ui-chip--brand) {
+  border-color: transparent;
+  background: var(--color-brand-soft);
+  color: var(--color-brand-strong);
+}
+
+:host(.ui-chip--positive) {
+  border-color: transparent;
+  background: #e6f4ec;
+  color: var(--color-positive);
+}
+
+:host(.ui-chip--caution) {
+  border-color: transparent;
+  background: #fdf3e3;
+  color: var(--color-caution);
+}
+
+:host(.ui-chip--negative) {
+  border-color: transparent;
+  background: #fdf2f1;
+  color: var(--color-negative);
+}

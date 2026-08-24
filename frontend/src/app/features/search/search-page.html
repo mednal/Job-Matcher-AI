@@ -1,0 +1,73 @@
+<section class="page search">
+  <h1>Search jobs</h1>
+  <p class="page__note">
+    Every result carries a Junior Match score — how suitable the posting is for an entry-level
+    candidate, based on what it asks for. It is not a prediction of getting hired.
+  </p>
+
+  <app-search-filters [query]="query()" [busy]="loading()" (apply)="applyFilters($event)" />
+
+  @if (error(); as message) {
+    <div class="search__error" role="alert">
+      <p class="search__error-message">{{ message }}</p>
+      <button class="search__retry" type="button" (click)="retry()">Try again</button>
+    </div>
+  } @else if (page(); as results) {
+    <div class="search__toolbar">
+      <p class="search__count" aria-live="polite">
+        @if (results.total === 1) {
+          1 job found
+        } @else {
+          {{ results.total }} jobs found
+        }
+        @if (loading()) {
+          <span class="search__updating">Updating…</span>
+        }
+      </p>
+
+      <div class="search__sort">
+        <label for="search-sort">Sort by</label>
+        <!-- `[selected]` on the option rather than `[value]` on the select: the
+             options are created after the select's own bindings run, so a bound
+             value would be written to a select that still had no matching option
+             and would silently fall back to the first ordering. -->
+        <select appInput id="search-sort" [disabled]="loading()" (change)="changeSort($event)">
+          @for (option of sorts; track option) {
+            <option [value]="option" [selected]="option === sort()">{{ sortLabel(option) }}</option>
+          }
+        </select>
+      </div>
+    </div>
+
+    @if (results.items.length === 0) {
+      <app-empty-state title="No jobs match this search">
+        @if (hasFilters()) {
+          <p>Try removing a filter, or widening the years of experience you will accept.</p>
+        } @else if (hasQueryText()) {
+          <p>Try a broader term — a technology or a job title rather than a whole sentence.</p>
+        } @else {
+          <p>
+            There are no jobs to show yet. Jobs appear here once they have been ingested and
+            classified.
+          </p>
+        }
+      </app-empty-state>
+    } @else {
+      <ul class="search__results">
+        @for (job of results.items; track job.id) {
+          <li><app-job-card [job]="job" /></li>
+        }
+      </ul>
+
+      <app-pagination
+        [page]="pageNumber()"
+        [pageSize]="pageSize()"
+        [total]="results.total"
+        [busy]="loading()"
+        (pageChange)="goToPage($event)"
+      />
+    }
+  } @else if (loading()) {
+    <app-spinner label="Searching jobs…" />
+  }
+</section>

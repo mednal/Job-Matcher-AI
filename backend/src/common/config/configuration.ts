@@ -1,7 +1,9 @@
 export interface AppConfig {
   nodeEnv: string;
   port: number;
-  corsOrigin: string;
+  // A list: a browser sends one Origin per request and the server must be able
+  // to allow more than one (the dev server does not always land on 4200).
+  corsOrigin: string[];
 }
 
 export interface DatabaseConfig {
@@ -28,11 +30,21 @@ export interface RootConfig {
   sources: SourcesConfig;
 }
 
+// CORS_ORIGIN is a comma-separated list of origins, e.g.
+// "http://localhost:4200,http://localhost:52562".
+const parseOrigins = (value: string): string[] =>
+  value
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+
 export default (): RootConfig => ({
   app: {
     nodeEnv: process.env.NODE_ENV ?? 'development',
     port: parseInt(process.env.PORT ?? '3000', 10),
-    corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:4200',
+    corsOrigin: parseOrigins(
+      process.env.CORS_ORIGIN ?? 'http://localhost:4200',
+    ),
   },
   database: {
     url: process.env.DATABASE_URL ?? '',

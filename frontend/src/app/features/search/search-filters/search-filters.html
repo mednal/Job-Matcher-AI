@@ -1,0 +1,162 @@
+<form class="filters" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+  <div class="filters__bar">
+    <label class="filters__bar-label" for="search-q">Keywords</label>
+    <div class="filters__bar-row">
+      <input
+        appInput
+        id="search-q"
+        type="search"
+        formControlName="q"
+        [attr.maxlength]="maxQueryLength"
+        placeholder="Job title, technology or company"
+        autocomplete="off"
+      />
+      <button appButton type="submit" [disabled]="busy()">Search</button>
+    </div>
+  </div>
+
+  <details class="filters__panel" [open]="panelOpen()" (toggle)="onPanelToggle($event)">
+    <summary class="filters__summary">
+      Filters
+      @if (activeCount() > 0) {
+        <span class="filters__count">{{ activeCount() }} on</span>
+      }
+    </summary>
+
+    <div class="filters__groups">
+      <fieldset class="filters__group">
+        <legend class="filters__legend">Experience level</legend>
+        <p class="filters__legend-note">
+          The level describes what the posting asks for. Naming one is also how jobs above it come
+          back into the results.
+        </p>
+        @for (level of juniorLevels; track level) {
+          <label class="filters__choice">
+            <input
+              type="checkbox"
+              [checked]="isOn(form.controls.juniorLevel, level)"
+              (change)="toggle(form.controls.juniorLevel, level)"
+            />
+            <span>{{ levelLabel(level) }}</span>
+          </label>
+        }
+      </fieldset>
+
+      <fieldset class="filters__group">
+        <legend class="filters__legend">Workplace</legend>
+        @for (type of workplaceTypes; track type) {
+          <label class="filters__choice">
+            <input
+              type="checkbox"
+              [checked]="isOn(form.controls.workplaceType, type)"
+              (change)="toggle(form.controls.workplaceType, type)"
+            />
+            <span>{{ workplaceLabel(type) }}</span>
+          </label>
+        }
+      </fieldset>
+
+      <fieldset class="filters__group">
+        <legend class="filters__legend">Contract</legend>
+        @for (type of employmentTypes; track type) {
+          <label class="filters__choice">
+            <input
+              type="checkbox"
+              [checked]="isOn(form.controls.employmentType, type)"
+              (change)="toggle(form.controls.employmentType, type)"
+            />
+            <span>{{ employmentLabel(type) }}</span>
+          </label>
+        }
+      </fieldset>
+
+      <div class="filters__group">
+        <app-multi-value-field
+          label="Technologies"
+          fieldId="search-technologies"
+          placeholder="java"
+          hint="One at a time. Several widen the search."
+          [maxLength]="maxTechnologyLength"
+          [normalize]="lowercase"
+          [values]="form.controls.technologies.value"
+          (valuesChange)="form.controls.technologies.setValue($event)"
+        />
+      </div>
+
+      <div class="filters__group">
+        <app-multi-value-field
+          label="Locations"
+          fieldId="search-locations"
+          placeholder="Berlin, Germany"
+          hint="Matched against the location the posting states."
+          [values]="form.controls.locations.value"
+          (valuesChange)="form.controls.locations.setValue($event)"
+        />
+
+        <div class="filters__field">
+          <label class="filters__label" for="search-country">Country code</label>
+          <input
+            appInput
+            id="search-country"
+            type="text"
+            formControlName="countryCode"
+            maxlength="2"
+            placeholder="DE"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <p class="filters__hint">Two letters, as in DE or FR.</p>
+        </div>
+      </div>
+
+      <div class="filters__group">
+        <div class="filters__field">
+          <label class="filters__label" for="search-min-score">Minimum Junior Match</label>
+          <input
+            appInput
+            id="search-min-score"
+            type="number"
+            formControlName="minJuniorScore"
+            [attr.min]="0"
+            [attr.max]="100"
+            step="5"
+            placeholder="0"
+          />
+          <p class="filters__hint">
+            How suitable the posting is for an entry-level candidate, out of 100.
+          </p>
+        </div>
+
+        <div class="filters__field">
+          <label class="filters__label" for="search-max-years">Most years asked for</label>
+          <input
+            appInput
+            id="search-max-years"
+            type="number"
+            formControlName="maxYearsRequired"
+            [attr.min]="0"
+            [attr.max]="maxYearsRequired"
+            step="1"
+            placeholder="Any"
+          />
+          <p class="filters__hint">Hides postings demanding more than this.</p>
+        </div>
+
+        <div class="filters__field">
+          <label class="filters__label" for="search-posted-within">Posted</label>
+          <select appInput id="search-posted-within" formControlName="postedWithinDays">
+            <option [ngValue]="null">Any time</option>
+            @for (choice of postedWithinChoices; track choice.days) {
+              <option [ngValue]="choice.days">{{ choice.label }}</option>
+            }
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="filters__actions">
+      <button appButton type="submit" [disabled]="busy()">Apply filters</button>
+      <button appButton variant="ghost" type="button" (click)="clear()">Clear all</button>
+    </div>
+  </details>
+</form>

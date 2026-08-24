@@ -1,0 +1,108 @@
+/* Shared by the login and register screens. One stylesheet rather than two
+   near-identical component files: the two forms are the same card with different
+   copy, and M11.5's `ui/` primitives will replace the field and button rules
+   here once they exist. */
+
+.auth {
+  max-width: 26rem;
+  margin: 0 auto;
+  padding: var(--space-7) var(--space-4);
+}
+
+.auth__card {
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.auth__lead {
+  margin-bottom: var(--space-5);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.auth__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+}
+
+.auth__label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.auth__input {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.auth__input:focus-visible {
+  border-color: var(--color-brand);
+}
+
+.auth__input[aria-invalid='true'] {
+  border-color: var(--color-negative);
+}
+
+.auth__hint {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.auth__error {
+  color: var(--color-negative);
+  font-size: var(--font-size-xs);
+}
+
+/* The server's answer, not a field's. Kept above the button so it is never
+   scrolled out of view on the phone-sized layout where the card fills the screen. */
+.auth__server-error {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--color-negative);
+  border-radius: var(--radius-sm);
+  background: #fdf2f1;
+  color: var(--color-negative);
+  font-size: var(--font-size-sm);
+}
+
+.auth__server-error ul {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+.auth__submit {
+  width: 100%;
+  padding: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-brand);
+  color: #fff;
+  font: inherit;
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.auth__submit:hover:not(:disabled) {
+  background: var(--color-brand-strong);
+}
+
+.auth__submit:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.auth__switch {
+  margin: var(--space-5) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}

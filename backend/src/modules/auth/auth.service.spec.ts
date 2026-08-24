@@ -6,6 +6,7 @@ import { PasswordHasherService } from './password-hasher.service';
 import { RefreshTokenService } from './refresh-token.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { RootConfig } from '../../common/config/configuration';
 
 function uniqueEmailViolation(): Prisma.PrismaClientKnownRequestError {
   return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
@@ -62,7 +63,7 @@ describe('AuthService', () => {
       passwordHasher as unknown as PasswordHasherService,
       refreshTokenService as unknown as RefreshTokenService,
       jwtService as unknown as JwtService,
-      configService as unknown as ConfigService,
+      configService as unknown as ConfigService<RootConfig, true>,
     );
   });
 

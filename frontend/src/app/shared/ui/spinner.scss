@@ -1,0 +1,30 @@
+:host {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.ui-spinner__mark {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-brand);
+  border-radius: var(--radius-full);
+  animation: ui-spinner-turn 0.7s linear infinite;
+}
+
+@keyframes ui-spinner-turn {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* A spinning ring is exactly the kind of small looping motion that triggers
+   discomfort, so the animation stops and the label carries the message alone. */
+@media (prefers-reduced-motion: reduce) {
+  .ui-spinner__mark {
+    animation: none;
+  }
+}

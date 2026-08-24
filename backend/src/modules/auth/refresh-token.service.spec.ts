@@ -2,6 +2,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { RefreshTokenService } from './refresh-token.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
+import { RootConfig } from '../../common/config/configuration';
 
 describe('RefreshTokenService', () => {
   let service: RefreshTokenService;
@@ -30,7 +31,7 @@ describe('RefreshTokenService', () => {
 
     service = new RefreshTokenService(
       prisma as unknown as PrismaService,
-      config as unknown as ConfigService,
+      config as unknown as ConfigService<RootConfig, true>,
     );
   });
 
