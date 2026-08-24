@@ -1,0 +1,155 @@
+<section class="page job-detail">
+  <p class="job-detail__back"><a routerLink="/jobs">← Back to job search</a></p>
+
+  @if (notFound()) {
+    <app-empty-state title="This job is not listed">
+      <p>
+        The address does not match a job in this application. A posting can also be removed after it
+        has been shared.
+      </p>
+      <p><a routerLink="/jobs">Search for something similar</a></p>
+    </app-empty-state>
+  } @else if (errorMessage(); as message) {
+    <div class="job-detail__error" role="alert">
+      <p class="job-detail__error-message">{{ message }}</p>
+      <button class="job-detail__retry" type="button" (click)="retry()">Try again</button>
+    </div>
+  } @else if (job(); as job) {
+    <header class="job-detail__head">
+      <div class="job-detail__identity">
+        <h1 class="job-detail__title">{{ job.title }}</h1>
+        <p class="job-detail__company">
+          <span class="job-detail__employer">{{ job.companyName }}</span>
+          <span class="job-detail__separator" aria-hidden="true">·</span>
+          <span>{{ location() }}</span>
+        </p>
+      </div>
+
+      <app-junior-score-badge
+        [level]="job.juniorLevel"
+        [score]="job.juniorScore"
+        [evidenceShown]="evidenceShown()"
+      />
+    </header>
+
+    @if (!job.isActive) {
+      <p class="job-detail__stale" role="status">
+        No source is listing this posting any more. It is shown as it was last seen, and applying
+        may no longer be possible.
+      </p>
+    }
+
+    <ul class="job-detail__facts">
+      <li>
+        <span class="job-detail__fact-label">Experience</span>
+        <span>{{ experience() ?? 'Not stated' }}</span>
+      </li>
+      @if (workplace(); as workplaceLabel) {
+        <li>
+          <span class="job-detail__fact-label">Workplace</span>
+          <span>{{ workplaceLabel }}</span>
+        </li>
+      }
+      @if (employment(); as employmentLabel) {
+        <li>
+          <span class="job-detail__fact-label">Contract</span>
+          <span>{{ employmentLabel }}</span>
+        </li>
+      }
+      @if (posted(); as postedOn) {
+        <li>
+          <span class="job-detail__fact-label">{{ postedOn.prefix }}</span>
+          <span>{{ postedOn.label }}</span>
+        </li>
+      }
+      @if (language(); as languageName) {
+        <li>
+          <span class="job-detail__fact-label">Language</span>
+          <span>{{ languageName }}</span>
+        </li>
+      }
+    </ul>
+
+    @if (job.technologies.length > 0) {
+      <!-- Every technology, not the first six: the card truncates to stay scannable
+           in a list, and this is the page the reader came to for the whole answer. -->
+      <ul class="job-detail__technologies">
+        @for (technology of job.technologies; track technology) {
+          <li>
+            <app-chip tone="brand">{{ technology }}</app-chip>
+          </li>
+        }
+      </ul>
+    }
+
+    <section class="job-detail__section">
+      <h2>Why this Junior Match</h2>
+      <p class="job-detail__note">
+        The score describes how suitable this posting is for someone starting out, read from the
+        wording below. It says nothing about any particular candidate.
+      </p>
+
+      @if (classification(); as assessment) {
+        @if (assessment.summary; as summary) {
+          <p class="job-detail__summary">{{ summary }}</p>
+        }
+
+        @if (evidenceShown()) {
+          <app-signal-list [positive]="positiveSignals()" [negative]="negativeSignals()" />
+        } @else {
+          <p class="job-detail__note">
+            This posting was assessed, but nothing in it could be quoted as evidence either way. The
+            description is below in full.
+          </p>
+        }
+      } @else {
+        <p class="job-detail__note">
+          This job has not been assessed yet, so it carries no score. The description is below in
+          full.
+        </p>
+      }
+    </section>
+
+    <section class="job-detail__section">
+      <h2>Job description</h2>
+      <!-- `lang` on the body, so a screen reader pronounces a German posting as
+           German rather than reading it aloud as English. -->
+      <div class="job-detail__description" [attr.lang]="job.language">
+        @for (paragraph of paragraphs(); track $index) {
+          <p>{{ paragraph }}</p>
+        } @empty {
+          <p class="job-detail__note">This source carried no description body.</p>
+        }
+      </div>
+    </section>
+
+    @if (job.sources.length > 0) {
+      <section class="job-detail__section">
+        <h2>{{ sourcesHeading() }}</h2>
+        <p class="job-detail__note">
+          Applying happens on the source's own site. Each link opens the original posting in a new
+          tab.
+        </p>
+
+        <ul class="job-detail__sources">
+          @for (source of job.sources; track source.url) {
+            <li class="job-detail__source">
+              <a
+                class="job-detail__source-link"
+                [href]="source.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                >Open on {{ source.sourceName }}</a
+              >
+              @if (source.attributionText; as attribution) {
+                <p class="job-detail__attribution">{{ attribution }}</p>
+              }
+            </li>
+          }
+        </ul>
+      </section>
+    }
+  } @else if (loading()) {
+    <app-spinner label="Loading this job…" />
+  }
+</section>
