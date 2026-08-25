@@ -1,0 +1,27 @@
+<nav class="pagination" aria-label="Result pages">
+  <p class="ui-tabular pagination__status">
+    Showing {{ first() }}–{{ last() }} of {{ total() }}
+    <span class="pagination__page">(page {{ page() }} of {{ lastPage() }})</span>
+  </p>
+
+  <div class="pagination__controls">
+    <button
+      appButton
+      variant="secondary"
+      type="button"
+      [disabled]="!hasPrevious() || busy()"
+      (click)="previous()"
+    >
+      Previous
+    </button>
+    <button
+      appButton
+      variant="secondary"
+      type="button"
+      [disabled]="!hasNext() || busy()"
+      (click)="next()"
+    >
+      Next
+    </button>
+  </div>
+</nav>

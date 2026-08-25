@@ -8,9 +8,12 @@ import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { API_BASE_URL } from '../../core/api/api-base-url';
+import { TokenStorage } from '../../core/auth/token-storage';
 import { errorInterceptor } from '../../core/interceptors/error-interceptor';
+import { AuthTokens } from '../../core/models/auth';
 import { JobSummary } from '../../core/models/job';
 import { Paginated } from '../../core/models/pagination';
+import { Profile } from '../../core/models/profile';
 import { SearchPage } from './search-page';
 
 const BASE_URL = 'http://api.test/api/v1';
@@ -31,6 +34,9 @@ const JOB: JobSummary = {
   juniorScore: 94,
   requiredMinYears: 0,
   requiredMaxYears: 1,
+  positiveSignals: [],
+  negativeSignals: [],
+  juniorTitleContradicted: false,
   sourceCount: 1,
 };
 
@@ -38,9 +44,42 @@ function page(overrides: Partial<Paginated<JobSummary>> = {}): Paginated<JobSumm
   return { items: [JOB], page: 1, pageSize: 20, total: 1, ...overrides };
 }
 
+const TOKENS: AuthTokens = { accessToken: 'access-1', refreshToken: 'refresh-1', expiresIn: 900 };
+
+function profile(overrides: Partial<Profile> = {}): Profile {
+  return {
+    displayName: null,
+    yearsOfExperience: 0,
+    desiredRoles: [],
+    technologies: [],
+    locations: [],
+    countryCodes: [],
+    workplaceTypes: [],
+    updatedAt: '2026-08-24T09:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** M11.9 — signing in is what makes the page read the profile at all. */
+function signIn(): void {
+  TestBed.inject(TokenStorage).set(TOKENS);
+}
+
+/**
+ * Signing in also puts a `SaveToggle` on every card (M11.8), and the first one to
+ * mount asks `SavedJobsStore` for what is already saved. It is nothing to do with
+ * the search, but it is a real open request, so it has to be answered.
+ */
+function answerSavedJobs(): void {
+  httpMock
+    .expectOne((request) => request.url === `${BASE_URL}/saved-jobs`)
+    .flush({ items: [], page: 1, pageSize: 50, total: 0 });
+}
+
 let httpMock: HttpTestingController;
 
 beforeEach(() => {
+  localStorage.clear();
   TestBed.configureTestingModule({
     providers: [
       { provide: API_BASE_URL, useValue: BASE_URL },
@@ -54,7 +93,10 @@ beforeEach(() => {
   httpMock = TestBed.inject(HttpTestingController);
 });
 
-afterEach(() => httpMock.verify());
+afterEach(() => {
+  httpMock.verify();
+  localStorage.clear();
+});
 
 /**
  * The one search the page has in flight. `expectOne` *takes* the request out of
@@ -163,7 +205,7 @@ describe('SearchPage', () => {
     expect(params.get('q')).toBe('java');
     expect(params.getAll('technologies')).toEqual(['java', 'spring-boot']);
     expect(params.getAll('locations')).toEqual(['Berlin, Germany']);
-    expect(params.get('countryCode')).toBe('DE');
+    expect(params.getAll('countryCode')).toEqual(['DE']);
     expect(params.getAll('workplaceType')).toEqual(['REMOTE']);
     expect(params.getAll('employmentType')).toEqual(['INTERNSHIP']);
     expect(params.getAll('juniorLevel')).toEqual(['ENTRY_LEVEL']);
@@ -318,6 +360,90 @@ describe('SearchPage', () => {
   });
 
   /**
+   * M11.9's own verification, from the search side: the saved profile is what a
+   * signed-in user's first search starts from. It is seeded into the *URL*, so the
+   * filters are visible in the panel and the search stays shareable.
+   */
+  it('starts a signed-in visitor from the filters their profile implies', async () => {
+    signIn();
+    const view = await open('/jobs');
+
+    // The unfiltered search is not held back while the profile is read.
+    await view.settle();
+    answerSavedJobs();
+
+    httpMock
+      .expectOne(`${BASE_URL}/profiles/me`)
+      .flush(profile({ technologies: ['java'], countryCodes: ['DE'], workplaceTypes: ['REMOTE'] }));
+    await tick();
+    view.harness.detectChanges();
+
+    expect(view.url()).toContain('technologies=java');
+
+    const seeded = view.search();
+    expect(seeded.request.params.getAll('technologies')).toEqual(['java']);
+    expect(seeded.request.params.getAll('countryCode')).toEqual(['DE']);
+    expect(seeded.request.params.getAll('workplaceType')).toEqual(['REMOTE']);
+    await view.answer(seeded);
+  });
+
+  /**
+   * M11.12 — a profile naming two countries used to lose the filter entirely,
+   * because the search took a single code and picking one of several would have
+   * narrowed the search to a country the user never singled out. Widening the
+   * parameter is what lets both through.
+   */
+  it('seeds every country a profile names', async () => {
+    signIn();
+    const view = await open('/jobs');
+
+    await view.settle();
+    answerSavedJobs();
+
+    httpMock.expectOne(`${BASE_URL}/profiles/me`).flush(profile({ countryCodes: ['DE', 'AT'] }));
+    await tick();
+    view.harness.detectChanges();
+
+    expect(view.url()).toContain('countryCode=DE');
+    expect(view.url()).toContain('countryCode=AT');
+
+    const seeded = view.search();
+    expect(seeded.request.params.getAll('countryCode')).toEqual(['DE', 'AT']);
+    await view.answer(seeded);
+  });
+
+  it('leaves a URL that already says something alone', async () => {
+    signIn();
+    const view = await open('/jobs?q=java');
+
+    httpMock.expectNone(`${BASE_URL}/profiles/me`);
+    await view.settle();
+    answerSavedJobs();
+
+    expect(view.url()).toBe('/jobs?q=java');
+  });
+
+  it('does not seed from an empty profile, so the URL stays clean', async () => {
+    signIn();
+    const view = await open('/jobs');
+    await view.settle();
+    answerSavedJobs();
+
+    httpMock.expectOne(`${BASE_URL}/profiles/me`).flush(profile({ updatedAt: null }));
+    await tick();
+    view.harness.detectChanges();
+
+    expect(view.url()).toBe('/jobs');
+  });
+
+  it('asks for no profile at all when nobody is signed in', async () => {
+    const view = await open('/jobs');
+
+    httpMock.expectNone(`${BASE_URL}/profiles/me`);
+    await view.settle();
+  });
+
+  /**
    * The score is never presented as a hiring prediction, and the page says what it
    * is before the first result is read (`PRODUCT.md` §8).
    */
@@ -327,5 +453,59 @@ describe('SearchPage', () => {
 
     expect(view.text()).toContain('Junior Match');
     expect(view.text()).toContain('not a prediction of getting hired');
+  });
+});
+
+/**
+ * M11.11 — the chips. The page-level half: they describe the URL, and removing
+ * one navigates. `search-query-params.spec.ts` owns what each chip *says*.
+ */
+describe('SearchPage — active filter chips', () => {
+  const chips = (element: HTMLElement) =>
+    Array.from(element.querySelectorAll('.search__chip-list li'), (node) =>
+      node.textContent?.replace(/\s+/g, ' ').trim(),
+    );
+
+  const removeButton = (element: HTMLElement, index: number) =>
+    element.querySelectorAll<HTMLButtonElement>('.search__chip-list .ui-chip__remove')[index];
+
+  it('shows a chip for every filter in the URL, and none for the search text', async () => {
+    const view = await open('/jobs?q=java&workplaceType=REMOTE&maxYearsRequired=2');
+    await view.settle();
+
+    expect(chips(view.element)).toEqual(['Remote ×', '2 years or fewer ×']);
+  });
+
+  it('shows nothing when no filter is on', async () => {
+    const view = await open('/jobs?q=java');
+    await view.settle();
+
+    expect(view.element.querySelector('.search__chips')).toBeNull();
+  });
+
+  // The point of the whole feature: one filter off, the rest of the address bar
+  // untouched.
+  it('removing a chip drops that parameter and keeps the others', async () => {
+    const view = await open('/jobs?q=java&workplaceType=REMOTE&maxYearsRequired=2');
+    await view.settle();
+
+    removeButton(view.element, 0).click();
+    await tick();
+    view.harness.detectChanges();
+
+    expect(view.url()).toBe('/jobs?q=java&maxYearsRequired=2');
+    await view.settle();
+  });
+
+  it('keeps the search text when every filter is cleared', async () => {
+    const view = await open('/jobs?q=java&workplaceType=REMOTE');
+    await view.settle();
+
+    view.element.querySelector<HTMLButtonElement>('.search__chips button[appButton]')!.click();
+    await tick();
+    view.harness.detectChanges();
+
+    expect(view.url()).toBe('/jobs?q=java');
+    await view.settle();
   });
 });

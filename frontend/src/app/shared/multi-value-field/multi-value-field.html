@@ -1,0 +1,46 @@
+<label class="multi-value__label" [for]="fieldId()">{{ label() }}</label>
+
+<div class="multi-value__entry">
+  <input
+    appInput
+    type="text"
+    [id]="fieldId()"
+    [placeholder]="placeholder()"
+    [attr.maxlength]="maxLength()"
+    [value]="draft()"
+    [disabled]="full()"
+    (input)="onInput($event)"
+    (keydown.enter)="onEnter($event)"
+  />
+  <button appButton variant="secondary" type="button" [disabled]="full()" (click)="add()">
+    Add
+  </button>
+</div>
+
+@if (hint(); as hintText) {
+  <p class="multi-value__hint">{{ hintText }}</p>
+}
+
+@if (full()) {
+  <p class="multi-value__hint">That is as many values as this filter takes.</p>
+}
+
+@if (values().length > 0) {
+  <ul class="multi-value__values">
+    @for (value of values(); track value) {
+      <li>
+        <!-- The chip's own remove control, not a second one written here: the two
+             had drifted, and this copy tinted its hover with `--color-surface`,
+             which is white on a brand chip's blue wash — invisible. -->
+        <app-chip
+          tone="brand"
+          [removable]="true"
+          [removeLabel]="'Remove ' + value + ' from ' + label()"
+          (remove)="remove(value)"
+        >
+          {{ value }}
+        </app-chip>
+      </li>
+    }
+  </ul>
+}

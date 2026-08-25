@@ -1,0 +1,40 @@
+.saved-jobs > .page__note {
+  margin-bottom: var(--space-5);
+}
+
+.saved-jobs__count {
+  margin: 0 0 var(--space-4);
+  font-weight: var(--font-weight-medium);
+}
+
+.saved-jobs__updating {
+  margin-left: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  font-variant-numeric: normal;
+}
+
+.saved-jobs__results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/**
+ * What happened to a saved posting since it was saved — no longer listed, or
+ * merged into another entry.
+ *
+ * It sits above its card as a caption rather than inside it, because the card is
+ * the posting and this is the application talking about the posting. The tighter
+ * gap to the card below it than to the entry above is what makes the pairing
+ * read without a box around both.
+ */
+.saved-jobs__note {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}

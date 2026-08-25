@@ -10,9 +10,9 @@
       <p><a routerLink="/jobs">Search for something similar</a></p>
     </app-empty-state>
   } @else if (errorMessage(); as message) {
-    <div class="job-detail__error" role="alert">
-      <p class="job-detail__error-message">{{ message }}</p>
-      <button class="job-detail__retry" type="button" (click)="retry()">Try again</button>
+    <div class="ui-error" role="alert">
+      <p>{{ message }}</p>
+      <button class="ui-error__retry" type="button" (click)="retry()">Try again</button>
     </div>
   } @else if (job(); as job) {
     <header class="job-detail__head">
@@ -25,11 +25,14 @@
         </p>
       </div>
 
-      <app-junior-score-badge
-        [level]="job.juniorLevel"
-        [score]="job.juniorScore"
-        [evidenceShown]="evidenceShown()"
-      />
+      <div class="job-detail__actions">
+        <app-junior-score-badge
+          [level]="job.juniorLevel"
+          [score]="job.juniorScore"
+          [evidenceShown]="evidenceShown()"
+        />
+        <app-save-toggle [jobId]="job.id" />
+      </div>
     </header>
 
     @if (!job.isActive) {
@@ -41,30 +44,30 @@
 
     <ul class="job-detail__facts">
       <li>
-        <span class="job-detail__fact-label">Experience</span>
+        <span class="ui-label job-detail__fact-label">Experience</span>
         <span>{{ experience() ?? 'Not stated' }}</span>
       </li>
       @if (workplace(); as workplaceLabel) {
         <li>
-          <span class="job-detail__fact-label">Workplace</span>
+          <span class="ui-label job-detail__fact-label">Workplace</span>
           <span>{{ workplaceLabel }}</span>
         </li>
       }
       @if (employment(); as employmentLabel) {
         <li>
-          <span class="job-detail__fact-label">Contract</span>
+          <span class="ui-label job-detail__fact-label">Contract</span>
           <span>{{ employmentLabel }}</span>
         </li>
       }
       @if (posted(); as postedOn) {
         <li>
-          <span class="job-detail__fact-label">{{ postedOn.prefix }}</span>
+          <span class="ui-label job-detail__fact-label">{{ postedOn.prefix }}</span>
           <span>{{ postedOn.label }}</span>
         </li>
       }
       @if (language(); as languageName) {
         <li>
-          <span class="job-detail__fact-label">Language</span>
+          <span class="ui-label job-detail__fact-label">Language</span>
           <span>{{ languageName }}</span>
         </li>
       }

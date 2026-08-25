@@ -34,7 +34,11 @@ export interface SearchQuery extends PageRequest {
   /** Free text matched against a job's display location. Several values widen. */
   locations?: string[];
   /** ISO-3166 alpha-2, uppercase. */
-  countryCode?: string;
+  /**
+   * ISO-3166 alpha-2, uppercase. A list since M11.12, so a profile naming two
+   * countries seeds the filter instead of having it dropped.
+   */
+  countryCode?: string[];
   workplaceType?: WorkplaceType[];
   employmentType?: EmploymentType[];
   juniorLevel?: JuniorLevel[];

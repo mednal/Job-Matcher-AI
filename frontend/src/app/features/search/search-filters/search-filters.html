@@ -1,7 +1,15 @@
 <form class="filters" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+  <!--
+    M11.11 — What and Where, side by side and always visible.
+    `PRODUCT.md` §5's own example search leads with a role and a place, so the
+    place cannot live behind a collapsed panel. Where reuses `multi-value-field`
+    rather than becoming a single text box: `locations` is a list on the wire and
+    several of them widen the search, so a single box would have to either drop
+    the extra values or hide them.
+  -->
   <div class="filters__bar">
-    <label class="filters__bar-label" for="search-q">Keywords</label>
-    <div class="filters__bar-row">
+    <div class="filters__bar-field">
+      <label class="filters__bar-label" for="search-q">What</label>
       <input
         appInput
         id="search-q"
@@ -11,8 +19,21 @@
         placeholder="Job title, technology or company"
         autocomplete="off"
       />
-      <button appButton type="submit" [disabled]="busy()">Search</button>
     </div>
+
+    <div class="filters__bar-field">
+      <app-multi-value-field
+        label="Where"
+        fieldId="search-locations"
+        placeholder="Berlin, Germany"
+        hint="Matched against the location the posting states."
+        [maxLength]="maxLocationLength"
+        [values]="form.controls.locations.value"
+        (valuesChange)="form.controls.locations.setValue($event)"
+      />
+    </div>
+
+    <button appButton class="filters__submit" type="submit" [disabled]="busy()">Search</button>
   </div>
 
   <details class="filters__panel" [open]="panelOpen()" (toggle)="onPanelToggle($event)">
@@ -84,29 +105,18 @@
       </div>
 
       <div class="filters__group">
+        <!-- Where moved to the bar (M11.11). A country code refines a location
+             rather than being one, so it stays here. -->
         <app-multi-value-field
-          label="Locations"
-          fieldId="search-locations"
-          placeholder="Berlin, Germany"
-          hint="Matched against the location the posting states."
-          [values]="form.controls.locations.value"
-          (valuesChange)="form.controls.locations.setValue($event)"
+          label="Countries"
+          fieldId="search-country"
+          placeholder="DE"
+          hint="Two letters each, as in DE or FR. Several widen the search."
+          [maxLength]="2"
+          [normalize]="uppercase"
+          [values]="form.controls.countryCode.value"
+          (valuesChange)="form.controls.countryCode.setValue($event)"
         />
-
-        <div class="filters__field">
-          <label class="filters__label" for="search-country">Country code</label>
-          <input
-            appInput
-            id="search-country"
-            type="text"
-            formControlName="countryCode"
-            maxlength="2"
-            placeholder="DE"
-            autocomplete="off"
-            spellcheck="false"
-          />
-          <p class="filters__hint">Two letters, as in DE or FR.</p>
-        </div>
       </div>
 
       <div class="filters__group">

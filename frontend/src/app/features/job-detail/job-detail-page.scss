@@ -9,15 +9,34 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-4);
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-5);
 }
 
 .job-detail__identity {
   min-width: 0;
 }
 
+.job-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+/**
+ * The title and the employer are the posting's own words, so they are set in the
+ * document serif — the same line the job card and the quoted evidence draw. The
+ * page's other headings ("Why this Junior Match", "Job description") stay sans,
+ * because those are the application speaking about the posting.
+ *
+ * Tracking returns to normal: the negative tracking on the sans display size is
+ * there to hold Inter together at 2rem, and applying it to a serif would close
+ * up the serifs it needs to stay open.
+ */
 .job-detail__title {
   margin-bottom: var(--space-2);
+  font-family: var(--font-serif);
+  letter-spacing: normal;
 }
 
 .job-detail__company {
@@ -27,30 +46,39 @@
 
 .job-detail__employer {
   color: var(--color-text);
-  font-weight: var(--font-weight-medium);
+  font-family: var(--font-serif);
+  font-weight: var(--font-weight-semibold);
 }
 
 .job-detail__separator {
   margin: 0 var(--space-2);
 }
 
-/* A posting no source lists any more is still worth reading — it is why a saved
-   job does not vanish — but the reader has to be told before they spend time on
-   it, so this sits above the facts rather than in a footnote. */
+/**
+ * A posting no source lists any more is still worth reading — it is why a saved
+ * job does not vanish — but the reader has to be told before they spend time on
+ * it, so this sits above the facts rather than in a footnote.
+ *
+ * A tinted bar, matching the contradiction banner's form: in this system a wash
+ * ground with its own text colour is what "the interface has a conclusion about
+ * this posting" looks like. Caution rather than Refuse, because the posting is
+ * not wrong about itself — it is only stale.
+ */
 .job-detail__stale {
+  margin: 0 0 var(--space-4);
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--color-border);
-  border-left: 3px solid var(--color-caution);
   border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-text-muted);
+  background: var(--color-caution-soft);
+  color: var(--color-caution);
   font-size: var(--font-size-sm);
+  max-width: 70ch;
+  text-wrap: pretty;
 }
 
 .job-detail__facts {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3) var(--space-5);
+  gap: var(--space-4) var(--space-6);
   margin: 0 0 var(--space-4);
   padding: var(--space-4);
   border: 1px solid var(--color-border);
@@ -65,12 +93,10 @@
   gap: var(--space-1);
 }
 
+/* `.ui-label` carries the type; the job card states the same facts with the same
+   class, which is what stops the two drifting apart again. */
 .job-detail__fact-label {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  display: block;
 }
 
 .job-detail__technologies {
@@ -83,14 +109,19 @@
 }
 
 .job-detail__section {
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-5);
   padding: var(--space-5);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
 }
 
+.job-detail__section:last-child {
+  margin-bottom: 0;
+}
+
 .job-detail__section h2 {
+  margin-bottom: var(--space-4);
   font-size: var(--font-size-lg);
 }
 
@@ -105,15 +136,27 @@
   margin-bottom: 0;
 }
 
+/* The classifier's own sentence about the posting — the application speaking,
+   so it stays sans while the description below it does not. */
 .job-detail__summary {
   max-width: 70ch;
 }
 
-/* The body is plain text split on its blank lines, so the single newlines a
-   requirements list is written with survive as line breaks. */
+/**
+ * The posting's description, in full and in the employer's voice.
+ *
+ * The serif is doing real reading work here and not only signalling whose words
+ * these are: this is the longest continuous text in the product, held at a 70ch
+ * measure, and it is frequently in German. `white-space: pre-line` keeps the
+ * single newlines a requirements list is written with, because the body arrives
+ * as plain text split on its blank lines.
+ */
 .job-detail__description {
   max-width: 70ch;
+  font-family: var(--font-serif);
+  font-size: var(--font-size-md);
   white-space: pre-line;
+  text-wrap: pretty;
 }
 
 .job-detail__description p:last-child {
@@ -139,30 +182,8 @@
   font-size: var(--font-size-xs);
 }
 
-.job-detail__error {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--color-negative);
-  border-radius: var(--radius-md);
-  background: #fdf2f1;
-  color: var(--color-negative);
-}
-
-.job-detail__error-message {
-  margin: 0;
-}
-
-.job-detail__retry {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid currentcolor;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: inherit;
-  font: inherit;
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
+/* The reading measure, not the scanning one: this page is a single document —
+   a title, a set of facts, quoted evidence and the posting's own prose. */
+.page.job-detail {
+  max-width: var(--layout-reading-width);
 }

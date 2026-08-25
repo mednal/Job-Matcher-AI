@@ -67,11 +67,36 @@ export interface JobSummary {
   juniorScore: number | null;
   requiredMinYears: number | null;
   requiredMaxYears: number | null;
+  /**
+   * M9.6 — the strongest evidence behind the level, capped by the API at two
+   * per polarity. It is what lets a *list* show the number at all: §6.5 permits
+   * the figure only where its evidence is on the same page, and a card with
+   * neither array populated falls back to the `JuniorLevel` band on its own.
+   */
+  positiveSignals: ClassificationSignal[];
+  negativeSignals: ClassificationSignal[];
+  /**
+   * M11.10 — the title reads junior and the posting's own stated minimum
+   * contradicts it. Computed by the API, not here, so the title vocabulary has
+   * one definition and cannot drift from the classifier that used it.
+   */
+  juniorTitleContradicted: boolean;
   /** Distinct sources carrying this job — the "also listed on N sources" count. */
   sourceCount: number;
 }
 
-export interface JobDetail extends Omit<JobSummary, 'sourceCount'> {
+/**
+ * `GET /jobs/:id`. The list-only fields are dropped rather than inherited:
+ * `sourceCount` becomes the full `sources` array, and the summary's capped
+ * `positiveSignals` / `negativeSignals` become the complete set under
+ * `classification`. `juniorTitleContradicted` is a summary field too — the
+ * detail page states both halves of the contradiction in full (the experience
+ * row and every signal), so it has no need of the shorthand.
+ */
+export interface JobDetail extends Omit<
+  JobSummary,
+  'sourceCount' | 'positiveSignals' | 'negativeSignals' | 'juniorTitleContradicted'
+> {
   description: string;
   /** False once every posting behind the job went stale (`docs/DATABASE.md` §8). */
   isActive: boolean;

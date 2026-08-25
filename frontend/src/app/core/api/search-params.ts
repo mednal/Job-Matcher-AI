@@ -25,7 +25,7 @@ export function toSearchParams(query: SearchQuery): HttpParams {
   let params = toPageParams(query);
 
   params = appendText(params, 'q', query.q);
-  params = appendText(params, 'countryCode', query.countryCode);
+  params = appendList(params, 'countryCode', query.countryCode);
   params = appendList(params, 'technologies', query.technologies);
   params = appendList(params, 'locations', query.locations);
   params = appendList(params, 'workplaceType', query.workplaceType);

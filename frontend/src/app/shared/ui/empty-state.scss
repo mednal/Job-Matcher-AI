@@ -1,7 +1,12 @@
+/**
+ * The dashed edge is this system's one non-solid border, and it means "content
+ * is absent here" rather than "content is separated here". A blank area is
+ * indistinguishable from a page that failed to load.
+ */
 :host {
   display: block;
-  padding: var(--space-7) var(--space-4);
-  border: 1px dashed var(--color-border);
+  padding: var(--space-7) var(--space-5);
+  border: 1px dashed var(--color-border-strong);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   text-align: center;
@@ -17,4 +22,5 @@
   max-width: 44ch;
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
+  text-wrap: pretty;
 }

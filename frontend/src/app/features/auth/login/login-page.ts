@@ -4,12 +4,14 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../../core/auth/auth-service';
 import { ApiError } from '../../../core/models/api-error';
 import { MAX_EMAIL_LENGTH, MAX_PASSWORD_LENGTH } from '../../../core/models/auth';
+import { Button } from '../../../shared/ui/button';
+import { InputField } from '../../../shared/ui/input';
 import { fieldError } from '../field-errors';
 import { safeRedirectTarget } from '../redirect-target';
 
 @Component({
   selector: 'app-login-page',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, Button, InputField],
   templateUrl: './login-page.html',
   styleUrl: '../auth-form.scss',
 })

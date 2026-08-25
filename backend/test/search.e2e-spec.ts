@@ -11,7 +11,10 @@ import type {
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { PaginatedResponse } from '../src/common/dto/paginated.response';
-import { JobSummaryResponse } from '../src/modules/jobs/dto/job-summary.response';
+import {
+  JobSummaryResponse,
+  SUMMARY_SIGNAL_LIMIT,
+} from '../src/modules/jobs/dto/job-summary.response';
 import { AuthTokensResponse } from '../src/modules/auth/dto/auth-tokens.response';
 
 /**
@@ -112,6 +115,10 @@ describe('Search (e2e)', () => {
   let rubyUserToken: string;
   /** Registered, but has never saved a profile. */
   let profilelessToken: string;
+  /** M11.12 — two profiles that differ only in the years they state. */
+  let oneYearToken: string;
+  let fiveYearToken: string;
+  let zeroYearToken: string;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -144,6 +151,15 @@ describe('Search (e2e)', () => {
       locations: ['Vienna'],
       countryCodes: ['AT'],
     });
+
+    oneYearToken = await register('one-year-user');
+    fiveYearToken = await register('five-year-user');
+    zeroYearToken = await register('zero-year-user');
+    // Years and nothing else, so the experience term carries the whole fit and
+    // the two profiles differ in exactly one number.
+    await saveProfile(oneYearToken, { yearsOfExperience: 1 });
+    await saveProfile(fiveYearToken, { yearsOfExperience: 5 });
+    await saveProfile(zeroYearToken, { yearsOfExperience: 0 });
   });
 
   async function register(label: string): Promise<string> {
@@ -420,6 +436,27 @@ describe('Search (e2e)', () => {
 
     it('matches an exact country code', async () => {
       expectIds(await filtered('countryCode=IE'), [fixtures.remoteJobId]);
+    });
+
+    // M11.12 — several codes widen, like every other list facet. Comma-splitting
+    // is allowed here and forbidden for `locations`, because a country code
+    // cannot contain a comma and "Berlin, Germany" can.
+    it('widens with a second country code', async () => {
+      expectIds(await filtered('countryCode=PT,AT'), [
+        fixtures.rustJobId,
+        fixtures.rubyJobId,
+      ]);
+      expectIds(await filtered('countryCode=PT&countryCode=AT'), [
+        fixtures.rustJobId,
+        fixtures.rubyJobId,
+      ]);
+    });
+
+    // One bad code fails the request rather than narrowing it silently.
+    it('rejects a list containing a code that is not alpha-2', async () => {
+      await request(server())
+        .get('/api/v1/jobs/search?countryCode=DE,DEU')
+        .expect(400);
     });
 
     it('filters by workplace type', async () => {
@@ -972,6 +1009,161 @@ describe('Search (e2e)', () => {
     });
   });
 
+  /**
+   * M9.6 — the evidence a result card needs to show its number.
+   *
+   * `docs/ARCHITECTURE.md` §6.5 lets the *number* be shown only where its
+   * evidence is on the same page, so before this the search list could only
+   * ever render the `JuniorLevel` band. This block is the milestone's `Verify:`
+   * line: the posting that titles itself junior and then demands five years
+   * comes back from the *list* carrying its own words, so the contradiction is
+   * visible without opening the job.
+   */
+
+  /**
+   * M11.12 — `Profile.yearsOfExperience` was written by the profile form and
+   * read by nothing. It now ranks: a posting whose stated minimum is within
+   * reach of the caller's experience is a job they can actually consider, and
+   * `juniorScore` alone ranks it away from them.
+   *
+   * The two profiles here differ in exactly one number and name nothing else,
+   * so any difference in the answers is the new term and nothing else.
+   */
+  describe('experience-fit ranking', () => {
+    // The two experienced bands are named so the posting with a stated floor of
+    // five years is in the result set at all (`PRODUCT.md` §8 hides it by
+    // default) — which is the whole point: it is out of reach at one year and
+    // within reach at five.
+    const YEARS_QUERY =
+      `q=${RARE_TOKEN}&pageSize=50` +
+      '&juniorLevel=ENTRY_LEVEL&juniorLevel=LIKELY_ENTRY_LEVEL' +
+      '&juniorLevel=AMBIGUOUS&juniorLevel=EXPERIENCED';
+
+    const positionOf = async (
+      jobId: string,
+      token?: string,
+    ): Promise<number> => {
+      const index = idsOf(await search(YEARS_QUERY, token)).indexOf(jobId);
+      expect(index).toBeGreaterThan(-1);
+      return index;
+    };
+
+    it('ranks a posting the caller can reach ahead of where it stood', async () => {
+      const atOneYear = await positionOf(
+        fixtures.experiencedJobId,
+        oneYearToken,
+      );
+      const atFiveYears = await positionOf(
+        fixtures.experiencedJobId,
+        fiveYearToken,
+      );
+
+      expect(atFiveYears).toBeLessThan(atOneYear);
+    });
+
+    // A profile that never mentioned years holds 0 by default, so reading it
+    // literally would give every untouched profile a ranking term its owner
+    // never asked for.
+    it('ranks a profile stating zero years exactly as anonymous', async () => {
+      expect(idsOf(await search(YEARS_QUERY, zeroYearToken))).toEqual(
+        idsOf(await search(YEARS_QUERY)),
+      );
+    });
+
+    // Ranking, never filtering — the invariant the whole profile feature rests
+    // on. A posting far beyond the caller's experience is re-ordered, not hidden.
+    it('returns the same jobs and the same total whatever the years', async () => {
+      const anonymous = await search(YEARS_QUERY);
+      const atOneYear = await search(YEARS_QUERY, oneYearToken);
+      const atFiveYears = await search(YEARS_QUERY, fiveYearToken);
+
+      expect(idsOf(atOneYear).sort()).toEqual(idsOf(anonymous).sort());
+      expect(idsOf(atFiveYears).sort()).toEqual(idsOf(anonymous).sort());
+      expect(atOneYear.total).toBe(anonymous.total);
+      expect(atFiveYears.total).toBe(anonymous.total);
+    });
+
+    // Query time only: the stored score describes the job, not the reader.
+    it('leaves the stored junior score untouched', async () => {
+      const stored = await prisma.job.findUnique({
+        where: { id: fixtures.experiencedJobId },
+        select: { juniorScore: true },
+      });
+
+      expect(stored?.juniorScore).toBe(30);
+    });
+  });
+
+  describe('evidence in the list projection', () => {
+    it('returns the current classification signals with a result', async () => {
+      const page = await search(`q=${RARE_TOKEN}`);
+      const job = page.items.find(
+        (item) => item.id === fixtures.titleMatchJobId,
+      );
+
+      expect(job?.positiveSignals).toEqual([
+        {
+          code: 'ENTRY_LEVEL_STATED',
+          weight: 30,
+          evidence: 'An entry level role',
+        },
+        {
+          code: 'MENTORSHIP_OFFERED',
+          weight: 15,
+          evidence: 'with a mentor alongside you',
+        },
+      ]);
+      expect(job?.negativeSignals).toEqual([]);
+    });
+
+    // The whole product in one assertion: the strongest concern reaches the
+    // list, quoting the posting, so "5+ years" is readable next to a title that
+    // says otherwise.
+    it('leads with the strongest concern, quoting the posting', async () => {
+      const page = await search(`q=${RARE_TOKEN}&juniorLevel=EXPERIENCED`);
+      const job = page.items.find(
+        (item) => item.id === fixtures.experiencedJobId,
+      );
+
+      expect(job?.negativeSignals[0]).toEqual({
+        code: 'REQUIRES_5_PLUS_YEARS',
+        weight: -40,
+        evidence: 'At least 5 years of professional experience',
+      });
+      expect(job?.negativeSignals[0].evidence).toEqual(
+        expect.stringContaining('5 years'),
+      );
+    });
+
+    it('never returns more than the summary cap per polarity', async () => {
+      const page = await search(
+        `q=${RARE_TOKEN}&juniorLevel=EXPERIENCED&juniorLevel=ENTRY_LEVEL`,
+      );
+
+      for (const item of page.items) {
+        expect(item.positiveSignals.length).toBeLessThanOrEqual(
+          SUMMARY_SIGNAL_LIMIT,
+        );
+        expect(item.negativeSignals.length).toBeLessThanOrEqual(
+          SUMMARY_SIGNAL_LIMIT,
+        );
+      }
+    });
+
+    // An unclassified job is the common case while ingestion is catching up.
+    // Two empty arrays rather than a missing field: the card reads them
+    // unconditionally and falls back to the band on its own.
+    it('serves empty arrays for a job with no classification', async () => {
+      const page = await search(`q=${RARE_TOKEN}`);
+      const job = page.items.find(
+        (item) => item.id === fixtures.unclassifiedJobId,
+      );
+
+      expect(job?.positiveSignals).toEqual([]);
+      expect(job?.negativeSignals).toEqual([]);
+    });
+  });
+
   describe('the route itself', () => {
     // /jobs/:id is parsed by ParseUUIDPipe. If it were matched first, the literal
     // `search` would come back as a 400 and this whole endpoint would be
@@ -1044,6 +1236,16 @@ async function createFixtures(prisma: PrismaService): Promise<Fixtures> {
       juniorScore?: number | null;
       requiredMinYears?: number | null;
       requiredMaxYears?: number | null;
+      /**
+       * M9.6 — the current classification's evidence. Only the fixtures that
+       * assert on evidence carry one; the rest stand for the common case of a
+       * job whose signals a list has no reason to show, and come back with two
+       * empty arrays.
+       */
+      signals?: {
+        positive: { code: string; weight: number; evidence: string }[];
+        negative: { code: string; weight: number; evidence: string }[];
+      };
     },
   ): Promise<string> {
     const created = await prisma.job.create({
@@ -1086,6 +1288,24 @@ async function createFixtures(prisma: PrismaService): Promise<Fixtures> {
       },
       select: { id: true },
     });
+
+    if (data.signals) {
+      await prisma.jobClassification.create({
+        data: {
+          jobId: created.id,
+          classifierVersion: 'search-e2e-fixture-1.0',
+          inputHash: `search-e2e-${key}-${RUN_ID}`,
+          level: or(data.juniorLevel, 'ENTRY_LEVEL') ?? 'ENTRY_LEVEL',
+          score: or(data.juniorScore, 90) ?? 90,
+          minYears: or(data.requiredMinYears, 0),
+          maxYears: or(data.requiredMaxYears, 1),
+          positiveSignals: data.signals.positive,
+          negativeSignals: data.signals.negative,
+          isCurrent: true,
+        },
+      });
+    }
+
     return created.id;
   }
 
@@ -1110,6 +1330,21 @@ async function createFixtures(prisma: PrismaService): Promise<Fixtures> {
       'An entry level role for developers starting their career. You will be ' +
       'developing services with a mentor alongside you.',
     postedAt: at(20),
+    signals: {
+      positive: [
+        {
+          code: 'MENTORSHIP_OFFERED',
+          weight: 15,
+          evidence: 'with a mentor alongside you',
+        },
+        {
+          code: 'ENTRY_LEVEL_STATED',
+          weight: 30,
+          evidence: 'An entry level role',
+        },
+      ],
+      negative: [],
+    },
   });
 
   const descriptionMatchJobId = await job('description', {
@@ -1220,6 +1455,33 @@ async function createFixtures(prisma: PrismaService): Promise<Fixtures> {
     juniorScore: 30,
     requiredMinYears: 5,
     requiredMaxYears: null,
+    // Four signals, so the cap has something to cut, and deliberately out of
+    // weight order so the ordering assertion cannot pass by accident.
+    signals: {
+      positive: [],
+      negative: [
+        {
+          code: 'SENIOR_RESPONSIBILITIES',
+          weight: -20,
+          evidence: 'You will lead a platform team.',
+        },
+        {
+          code: 'REQUIRES_5_PLUS_YEARS',
+          weight: -40,
+          evidence: 'At least 5 years of professional experience',
+        },
+        {
+          code: 'TEAM_LEADERSHIP',
+          weight: -25,
+          evidence: 'lead a platform team',
+        },
+        {
+          code: 'DISTRIBUTED_SYSTEMS_DEPTH',
+          weight: -10,
+          evidence: 'with distributed systems is required',
+        },
+      ],
+    },
   });
 
   const clearlyExperiencedJobId = await job('clearly-experienced', {

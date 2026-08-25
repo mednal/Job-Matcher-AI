@@ -117,7 +117,9 @@ backend/src/
 │   ├── config/               # typed env config (@nestjs/config + validation)
 │   ├── prisma/               # PrismaService + PrismaModule
 │   ├── filters/              # global exception filter
-│   ├── interceptors/         # logging, response shaping
+│   ├── middleware/           # request id + access log, ahead of the guards
+│   ├── http/                 # request-id helpers, the API route prefix
+│   ├── throttling/           # §9 rate limiting
 │   └── dto/                  # pagination, shared primitives
 └── modules/
     ├── auth/
@@ -878,6 +880,11 @@ JWT_ACCESS_TTL
 JWT_REFRESH_TTL
 PORT
 CORS_ORIGIN
+SOURCE_USER_AGENT_CONTACT   # contact address in the User-Agent (§7.3.2)
+THROTTLE_ENABLED            # §9 rate limiting; off only behind an edge limiter
+THROTTLE_TTL_SECONDS
+THROTTLE_LIMIT              # per IP per window, whole API
+THROTTLE_AUTH_LIMIT         # per IP per window, /auth/* only
 INGESTION_ENABLED           # off by default in development
 INGESTION_CRON
 AI_CLASSIFIER_ENABLED       # feature flag for §6.4 stage 2
@@ -888,9 +895,14 @@ Local development runs PostgreSQL in Docker Compose, with backend and frontend o
 the host. Migrations are Prisma-managed and committed. A seed script provides a demo
 user and a fixture job set, so the frontend is developable without running ingestion.
 
-Structured JSON logging with a request id. Errors are normalized by a global
-exception filter into `{ statusCode, message, error, requestId }`; internal errors
-never leak stack traces or Prisma messages to clients.
+Structured JSON logging with a request id. The id is assigned by middleware rather
+than an interceptor, because Nest runs middleware before guards and a request the
+global `JwtAuthGuard` rejects has to carry one too; the access line is written from
+the response's `finish` event, so every outcome is logged exactly once. Errors are
+normalized by a global exception filter into
+`{ statusCode, message, error, requestId }`; anything that is not an `HttpException`
+becomes a bare 500, which is what keeps stack traces and Prisma messages away from
+clients by construction rather than by per-service catching.
 
 ---
 

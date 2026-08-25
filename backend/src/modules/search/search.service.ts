@@ -101,7 +101,7 @@ function toFilters(query: SearchQuery): SearchFilters {
   return {
     technologies: query.technologies ?? [],
     locations: query.locations ?? [],
-    countryCode: query.countryCode ?? null,
+    countryCode: query.countryCode ?? [],
     workplaceType: query.workplaceType ?? [],
     employmentType: query.employmentType ?? [],
     juniorLevel: query.juniorLevel ?? [],
@@ -112,14 +112,24 @@ function toFilters(query: SearchQuery): SearchFilters {
 }
 
 /**
- * A stored profile as the two things ranking uses (`docs/ARCHITECTURE.md` §6.5).
+ * A stored profile as the things ranking uses (`docs/ARCHITECTURE.md` §6.5).
  *
- * A profile that names neither technologies nor a place becomes `null`, not an
- * empty fit: a registered user who has never filled anything in must be ranked
- * exactly like an anonymous one, and `null` is the single condition the repository
- * tests for that. `yearsOfExperience` and `desiredRoles` are deliberately not
- * read — the milestone weights technologies and locations, and `desiredRoles` is
- * free text that would need the text query's stemming to mean anything.
+ * A profile that says none of them becomes `null`, not an empty fit: a
+ * registered user who has never filled anything in must be ranked exactly like
+ * an anonymous one, and `null` is the single condition the repository tests for
+ * that.
+ *
+ * **Zero years is passed as `null`, not as `0`** (M11.12). `yearsOfExperience`
+ * is non-null and defaults to 0, so it is the one field that holds a value for
+ * a profile that never mentioned it — reading it literally would give every
+ * untouched profile a ranking term its owner never asked for. At zero years the
+ * term would also restate what `juniorScore` already contributes with a much
+ * larger share. It earns its place above zero, where it says something new: a
+ * candidate with two years can reach a posting asking for three, and the junior
+ * score alone ranks that posting away from them.
+ *
+ * `desiredRoles` is still deliberately unread — it is free text that would need
+ * the text query's stemming to mean anything, and weighting it is M12.3's.
  *
  * The values are already canonical: M3.6 writes technologies as slugs and country
  * codes as uppercase alpha-2 at write time, precisely so a read-time comparison
@@ -130,12 +140,15 @@ function toProfileFit(profile: Profile): ProfileFit | null {
     technologies: profile.technologies,
     locations: profile.locations,
     countryCodes: profile.countryCodes,
+    yearsOfExperience:
+      profile.yearsOfExperience > 0 ? profile.yearsOfExperience : null,
   };
 
   const isEmpty =
     fit.technologies.length === 0 &&
     fit.locations.length === 0 &&
-    fit.countryCodes.length === 0;
+    fit.countryCodes.length === 0 &&
+    fit.yearsOfExperience === null;
 
   return isEmpty ? null : fit;
 }

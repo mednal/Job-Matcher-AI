@@ -1,0 +1,21 @@
+@if (visible()) {
+  <button
+    appButton
+    variant="secondary"
+    class="save-toggle__button"
+    type="button"
+    [disabled]="busy()"
+    [attr.aria-pressed]="saved()"
+    (click)="toggle()"
+  >
+    {{ saved() ? 'Saved' : 'Save' }}
+  </button>
+
+  @if (failed()) {
+    <!-- `saved()` already reflects the rollback: the state it settled back to
+         is the state the failed action was trying to leave. -->
+    <p class="save-toggle__error" role="alert">
+      {{ saved() ? 'Could not unsave. Try again.' : 'Could not save. Try again.' }}
+    </p>
+  }
+}

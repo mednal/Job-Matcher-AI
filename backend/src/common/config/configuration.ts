@@ -23,15 +23,34 @@ export interface SourcesConfig {
   userAgentContact: string;
 }
 
+// docs/ARCHITECTURE.md §9 requires a global rate limit with a stricter one on
+// `/auth/*`. The numbers are configuration rather than constants because the
+// right limit differs per deployment (M13.1 sets them for production), and
+// `enabled` exists so an environment that already rate-limits at the edge — or
+// an automated test suite that would trip the limit by design — can turn the
+// in-process limiter off without removing it from the code.
+export interface ThrottleConfig {
+  enabled: boolean;
+  ttlSeconds: number;
+  limit: number;
+  authLimit: number;
+}
+
 export interface RootConfig {
   app: AppConfig;
   database: DatabaseConfig;
   auth: AuthConfig;
   sources: SourcesConfig;
+  throttle: ThrottleConfig;
 }
 
 // CORS_ORIGIN is a comma-separated list of origins, e.g.
 // "http://localhost:4200,http://localhost:52562".
+// Joi has already coerced and defaulted these, but this factory reads
+// process.env directly, so it repeats the default rather than assuming it.
+const parseBoolean = (value: string | undefined, fallback: boolean): boolean =>
+  value === undefined ? fallback : value.trim().toLowerCase() === 'true';
+
 const parseOrigins = (value: string): string[] =>
   value
     .split(',')
@@ -61,5 +80,11 @@ export default (): RootConfig => ({
     userAgentContact:
       process.env.SOURCE_USER_AGENT_CONTACT ??
       'https://github.com/mednal/Job-Matcher-AI',
+  },
+  throttle: {
+    enabled: parseBoolean(process.env.THROTTLE_ENABLED, true),
+    ttlSeconds: parseInt(process.env.THROTTLE_TTL_SECONDS ?? '60', 10),
+    limit: parseInt(process.env.THROTTLE_LIMIT ?? '100', 10),
+    authLimit: parseInt(process.env.THROTTLE_AUTH_LIMIT ?? '10', 10),
   },
 });

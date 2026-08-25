@@ -9,6 +9,7 @@ import {
   WorkplaceType,
 } from '../../../core/models/enums';
 import {
+  MAX_LOCATION_LENGTH,
   MAX_POSTED_WITHIN_DAYS,
   MAX_SEARCH_QUERY_LENGTH,
   MAX_TECHNOLOGY_LENGTH,
@@ -17,9 +18,9 @@ import {
 } from '../../../core/models/search';
 import { employmentTypeLabel, workplaceTypeLabel } from '../../../shared/enum-labels';
 import { levelLabel } from '../../../shared/junior-score-badge/level-labels';
+import { MultiValueField } from '../../../shared/multi-value-field/multi-value-field';
 import { Button } from '../../../shared/ui/button';
 import { InputField } from '../../../shared/ui/input';
-import { MultiValueField } from '../multi-value-field/multi-value-field';
 import { activeFilterCount } from '../search-query-params';
 
 /** The date filter's choices. Free-form days are legal on the wire, not useful here. */
@@ -35,7 +36,7 @@ interface FiltersValue {
   q: string;
   technologies: string[];
   locations: string[];
-  countryCode: string;
+  countryCode: string[];
   workplaceType: WorkplaceType[];
   employmentType: EmploymentType[];
   juniorLevel: JuniorLevel[];
@@ -81,11 +82,14 @@ export class SearchFilters {
 
   protected readonly maxQueryLength = MAX_SEARCH_QUERY_LENGTH;
   protected readonly maxTechnologyLength = MAX_TECHNOLOGY_LENGTH;
+  protected readonly maxLocationLength = MAX_LOCATION_LENGTH;
   protected readonly maxYearsRequired = MAX_YEARS_REQUIRED;
   protected readonly maxPostedWithinDays = MAX_POSTED_WITHIN_DAYS;
 
   /** Technology slugs are lowercase by definition of the stored vocabulary. */
   protected readonly lowercase = (value: string): string => value.toLowerCase();
+  /** Country codes are uppercase alpha-2, as the profile form writes them. */
+  protected readonly uppercase = (value: string): string => value.toUpperCase();
 
   protected readonly workplaceLabel = workplaceTypeLabel;
   protected readonly employmentLabel = employmentTypeLabel;
@@ -95,7 +99,7 @@ export class SearchFilters {
     q: new FormControl('', { nonNullable: true }),
     technologies: new FormControl<string[]>([], { nonNullable: true }),
     locations: new FormControl<string[]>([], { nonNullable: true }),
-    countryCode: new FormControl('', { nonNullable: true }),
+    countryCode: new FormControl<string[]>([], { nonNullable: true }),
     workplaceType: new FormControl<WorkplaceType[]>([], { nonNullable: true }),
     employmentType: new FormControl<EmploymentType[]>([], { nonNullable: true }),
     juniorLevel: new FormControl<JuniorLevel[]>([], { nonNullable: true }),
@@ -169,7 +173,7 @@ function toFormValue(query: SearchQuery): FiltersValue {
     q: query.q ?? '',
     technologies: [...(query.technologies ?? [])],
     locations: [...(query.locations ?? [])],
-    countryCode: query.countryCode ?? '',
+    countryCode: [...(query.countryCode ?? [])],
     workplaceType: [...(query.workplaceType ?? [])],
     employmentType: [...(query.employmentType ?? [])],
     juniorLevel: [...(query.juniorLevel ?? [])],
@@ -201,9 +205,8 @@ function toQuery(value: FiltersValue): SearchQuery {
   if (value.locations.length > 0) {
     query.locations = value.locations;
   }
-  const countryCode = value.countryCode.trim();
-  if (countryCode.length > 0) {
-    query.countryCode = countryCode.toUpperCase();
+  if (value.countryCode.length > 0) {
+    query.countryCode = value.countryCode;
   }
   if (value.workplaceType.length > 0) {
     query.workplaceType = value.workplaceType;

@@ -1,4 +1,5 @@
-/* Global design tokens, base element styles and the page layout primitive.
+/* Global design tokens, base element styles, the page layout primitive and the
+   two patterns that are shared by more surfaces than any single component owns.
    Component-specific styling stays in the component's own .scss file. */
 
 :root {
@@ -9,18 +10,44 @@
   --color-surface: #ffffff;
   --color-surface-muted: #eef0f4;
   --color-border: #dde1e7;
+  /* The hairline, one step darker. Hover and focus in this system change tone
+     rather than elevation, so the border needs a second value to change to. */
+  --color-border-strong: #c3cad4;
   --color-text: #15181d;
   --color-text-muted: #5b6472;
   --color-brand: #1d4ed8;
   --color-brand-strong: #1a3fae;
   --color-brand-soft: #e9efff;
   --color-positive: #146c43;
+  --color-positive-soft: #e6f4ec;
   --color-caution: #9a5b00;
+  --color-caution-soft: #fdf3e3;
   --color-negative: #b42318;
+  --color-negative-soft: #fdf2f1;
+  /* A tint for hovering something whose ground is not known in advance — the
+     remove control inside a chip of any tone. Ink-derived, never pure black. */
+  --color-scrim: rgb(21 24 29 / 8%);
 
-  /* Typography */
+  /**
+   * Typography — two voices.
+   *
+   * Sans is the application speaking: labels, scores, controls, its own prose.
+   * Serif is the posting speaking: the job title, the employer, the description
+   * body, and every phrase quoted as evidence. The product's central honesty
+   * commitment is the line between what it claims and what the employer wrote,
+   * so that line is drawn in the letterforms rather than left to italics alone.
+   *
+   * Both faces are self-hosted variable fonts (see angular.json) and are served
+   * per-subset by unicode-range, which matters because job content is
+   * multilingual by design and a German or Polish posting must not fall back to
+   * a different face mid-sentence.
+   */
   --font-sans:
-    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+  --font-serif:
+    'Source Serif 4 Variable', 'Iowan Old Style', Palatino, Georgia, 'Times New Roman', serif;
+
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-md: 1rem;
@@ -31,6 +58,12 @@
   --line-height-normal: 1.55;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
+
+  /* Tracking. Set optically, not uniformly: type needs less as it grows and
+     more when it is small and capitalised. */
+  --tracking-display: -0.018em;
+  --tracking-title: -0.008em;
+  --tracking-label: 0.06em;
 
   /* Spacing — 4px scale */
   --space-1: 0.25rem;
@@ -49,9 +82,32 @@
   --shadow-sm: 0 1px 2px rgb(16 24 40 / 6%);
   --shadow-md: 0 4px 12px rgb(16 24 40 / 8%);
 
-  /* Layout */
+  /* Motion. One duration and one curve: state changes settle, they do not
+     perform. Anything longer than this is decoration in an interface built for
+     comparing one posting against another. */
+  --duration-fast: 120ms;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.3, 1);
+
+  /**
+   * Layout — two page measures, chosen by what the page is for.
+   *
+   * 72rem is the scanning measure: the result list and the saved list, where the
+   * eye runs down a column of cards comparing them and the width buys facts
+   * side by side.
+   *
+   * 52rem is the reading measure, for the pages that are one document rather
+   * than a list — the job detail and the profile form. At 72rem those held a
+   * 70ch paragraph in a 1140px card and read as half-empty; the column has to
+   * be near the measure of the text inside it.
+   */
   --layout-max-width: 72rem;
+  --layout-reading-width: 52rem;
   --header-height: 3.5rem;
+
+  accent-color: var(--color-brand);
+  /* Themes the caret in every field at once; the browser's default is pure
+     black, which belongs to no palette. */
+  caret-color: var(--color-brand);
 }
 
 *,
@@ -65,6 +121,13 @@ body {
   height: 100%;
 }
 
+html {
+  /* Thin, hairline-toned scrollbars in the browsers that theme them, rather than
+     the platform's default grey slab beside a page built out of 1px rules. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
 body {
   margin: 0;
   background: var(--color-bg);
@@ -74,6 +137,12 @@ body {
   line-height: var(--line-height-normal);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: var(--color-brand-soft);
+}
+
+::selection {
+  background: var(--color-brand-soft);
+  color: var(--color-brand-strong);
 }
 
 h1,
@@ -82,31 +151,45 @@ h3 {
   margin: 0 0 var(--space-3);
   line-height: var(--line-height-tight);
   font-weight: var(--font-weight-semibold);
+  /* Headings here are real sentences — "No source is listing this posting any
+     more" — and a one-word last line reads as a mistake. */
+  text-wrap: balance;
 }
 
 h1 {
   font-size: var(--font-size-2xl);
+  letter-spacing: var(--tracking-display);
 }
 
 h2 {
   font-size: var(--font-size-xl);
+  letter-spacing: var(--tracking-title);
 }
 
 h3 {
   font-size: var(--font-size-lg);
+  letter-spacing: var(--tracking-title);
 }
 
 p {
   margin: 0 0 var(--space-4);
+  text-wrap: pretty;
 }
 
 a {
   color: var(--color-brand);
   text-decoration: none;
+  text-underline-offset: 0.18em;
+  text-decoration-thickness: 1px;
 }
 
 a:hover {
   text-decoration: underline;
+}
+
+::placeholder {
+  color: var(--color-text-muted);
+  opacity: 1;
 }
 
 :focus-visible {
@@ -126,4 +209,91 @@ a:hover {
 .page__note {
   color: var(--color-text-muted);
   max-width: 60ch;
+}
+
+/**
+ * The uppercase micro-label: a word that names the value printed directly under
+ * it — EXPERIENCE, LOCATION, POSITIVE. Four surfaces were each spelling these
+ * four declarations out, and one of them had quietly stopped matching the rest.
+ *
+ * Reserved for that job. Never a button, a heading, a nav item or emphasis.
+ */
+.ui-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+/**
+ * The inline error block: a request that failed, and the control that retries
+ * it. Global rather than a component because four screens render exactly this
+ * and each had grown its own copy of the same twenty lines.
+ *
+ * The retry control takes its colour from the parent with `currentcolor` rather
+ * than becoming a fourth button variant that exists only inside a red panel.
+ */
+.ui-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-negative);
+  border-radius: var(--radius-md);
+  background: var(--color-negative-soft);
+  color: var(--color-negative);
+}
+
+.ui-error > p,
+.ui-error > ul {
+  margin: 0;
+}
+
+.ui-error > ul {
+  padding-left: var(--space-4);
+}
+
+.ui-error__retry {
+  flex: none;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid currentcolor;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.ui-error__retry:hover {
+  background: var(--color-scrim);
+}
+
+/* The empty state's body is projected content, so it carries the calling page's
+   style scope rather than the component's and has to be reached from here. A
+   trailing paragraph margin inside a centred panel reads as the panel sitting
+   off-centre. */
+.ui-empty-state__body > p:last-child {
+  margin-bottom: 0;
+}
+
+/* Numbers that are read down a column or compared between two rows — scores,
+   result counts, page ranges — need to occupy the same width in every digit. */
+.ui-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

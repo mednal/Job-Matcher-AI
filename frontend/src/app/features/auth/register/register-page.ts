@@ -8,12 +8,14 @@ import {
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
 } from '../../../core/models/auth';
+import { Button } from '../../../shared/ui/button';
+import { InputField } from '../../../shared/ui/input';
 import { fieldError } from '../field-errors';
 import { safeRedirectTarget } from '../redirect-target';
 
 @Component({
   selector: 'app-register-page',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, Button, InputField],
   templateUrl: './register-page.html',
   styleUrl: '../auth-form.scss',
 })

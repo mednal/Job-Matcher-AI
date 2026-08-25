@@ -138,12 +138,41 @@ describe('SearchQuery', () => {
 
   describe('countryCode', () => {
     it('uppercases and accepts an ISO-3166 alpha-2 code', () => {
-      expect(parse({ countryCode: 'de' }).countryCode).toBe('DE');
+      expect(parse({ countryCode: 'de' }).countryCode).toEqual(['DE']);
       expect(errorsFor({ countryCode: 'de' })).toEqual([]);
     });
 
     it.each(['DEU', 'D', 'ZZ'])('rejects %s', (code) => {
       expect(errorsFor({ countryCode: code })).toEqual(['countryCode']);
+    });
+
+    /**
+     * M11.12 — several codes, so a profile naming two countries can seed the
+     * filter instead of being dropped. Comma-splittable because a country code
+     * is a closed two-character vocabulary, unlike `locations`.
+     */
+    it('accepts several codes, repeated or comma-separated', () => {
+      expect(parse({ countryCode: ['de', 'at'] }).countryCode).toEqual([
+        'DE',
+        'AT',
+      ]);
+      expect(parse({ countryCode: 'de,at' }).countryCode).toEqual(['DE', 'AT']);
+      expect(errorsFor({ countryCode: ['DE', 'AT'] })).toEqual([]);
+    });
+
+    // One bad code fails the request rather than being silently dropped: a
+    // filter that quietly means something narrower than the URL says is worse
+    // than an error the caller can act on.
+    it('rejects the whole list when one code is not alpha-2', () => {
+      expect(errorsFor({ countryCode: ['DE', 'DEU'] })).toEqual([
+        'countryCode',
+      ]);
+    });
+
+    it('rejects more codes than the shared cap allows', () => {
+      const values = Array.from({ length: MAX_FILTER_VALUES + 1 }, () => 'DE');
+
+      expect(errorsFor({ countryCode: values })).toEqual(['countryCode']);
     });
   });
 

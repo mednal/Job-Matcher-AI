@@ -1,7 +1,11 @@
 /* Shared by the login and register screens. One stylesheet rather than two
    near-identical component files: the two forms are the same card with different
-   copy, and M11.5's `ui/` primitives will replace the field and button rules
-   here once they exist. */
+   copy.
+
+   M11.5's `ui/` primitives now carry the field and the submit — the hand-rolled
+   `.auth__input` and `.auth__submit` rules that stood in for them until those
+   existed are gone, along with the focus, invalid and disabled states they were
+   maintaining a second copy of. */
 
 .auth {
   max-width: 26rem;
@@ -17,10 +21,15 @@
   box-shadow: var(--shadow-sm);
 }
 
+.auth__card h1 {
+  font-size: var(--font-size-xl);
+}
+
 .auth__lead {
   margin-bottom: var(--space-5);
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
+  text-wrap: pretty;
 }
 
 .auth__field {
@@ -35,23 +44,6 @@
   font-weight: var(--font-weight-medium);
 }
 
-.auth__input {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-}
-
-.auth__input:focus-visible {
-  border-color: var(--color-brand);
-}
-
-.auth__input[aria-invalid='true'] {
-  border-color: var(--color-negative);
-}
-
 .auth__hint {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
@@ -62,42 +54,19 @@
   font-size: var(--font-size-xs);
 }
 
-/* The server's answer, not a field's. Kept above the button so it is never
-   scrolled out of view on the phone-sized layout where the card fills the screen. */
+/* The server's answer, not a field's — the shared `.ui-error` block carries it.
+   Kept above the button so it is never scrolled out of view on the phone-sized
+   layout where the card fills the screen. */
 .auth__server-error {
   margin-bottom: var(--space-4);
-  padding: var(--space-3);
-  border: 1px solid var(--color-negative);
-  border-radius: var(--radius-sm);
-  background: #fdf2f1;
-  color: var(--color-negative);
   font-size: var(--font-size-sm);
 }
 
-.auth__server-error ul {
-  margin: 0;
-  padding-left: var(--space-4);
-}
-
+/* A form's own submit is the one control that earns a taller target than the
+   button primitive's default: it is the only thing on the card to press. */
 .auth__submit {
-  width: 100%;
-  padding: var(--space-3);
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: var(--color-brand);
-  color: #fff;
-  font: inherit;
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-}
-
-.auth__submit:hover:not(:disabled) {
-  background: var(--color-brand-strong);
-}
-
-.auth__submit:disabled {
-  opacity: 0.6;
-  cursor: progress;
+  padding-block: var(--space-3);
+  margin-top: var(--space-5);
 }
 
 .auth__switch {

@@ -4,16 +4,14 @@
 
 .signal-list__columns {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-4) var(--space-5);
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
 }
 
 .signal-list__heading {
-  margin: 0 0 var(--space-2);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
+  /* `.ui-label` carries the type. Only the tone is local, because each column's
+     heading is the verdict its evidence supports. */
+  margin: 0 0 var(--space-3);
 }
 
 .signal-list__group--positive .signal-list__heading {
@@ -37,15 +35,33 @@
   display: block;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-tight);
 }
 
+/**
+ * The posting's own words — the object the whole product exists to put in front
+ * of the reader.
+ *
+ * It is set in the document serif because that is the line this interface draws
+ * everywhere: sans is the application talking, serif is the employer. Previously
+ * this was the smallest text on the card, which had it reading as a footnote to
+ * the classifier's label when the relationship is the other way round — the
+ * label is the summary, this is the source. At 0.875rem it sits level with the
+ * label above it and stays legible in a German posting's longer clause.
+ *
+ * The 2px rule and the typographic quotes are the citation form, not decoration:
+ * the reader must never be in doubt about which words the product wrote.
+ */
 .signal-list__evidence {
   margin: var(--space-1) 0 0;
   padding-left: var(--space-3);
   border-left: 2px solid var(--color-border);
   color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
+  font-family: var(--font-serif);
+  font-size: var(--font-size-sm);
   font-style: italic;
+  line-height: var(--line-height-normal);
+  text-wrap: pretty;
 }
 
 .signal-list__evidence::before {

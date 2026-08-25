@@ -19,6 +19,9 @@ const JOB: JobSummary = {
   juniorScore: 94,
   requiredMinYears: 0,
   requiredMaxYears: 1,
+  positiveSignals: [],
+  negativeSignals: [],
+  juniorTitleContradicted: false,
   sourceCount: 1,
 };
 
@@ -50,6 +53,9 @@ function render(job: Partial<JobSummary> = {}, inputs: Record<string, unknown> =
       Array.from(element.querySelectorAll('.signal-list__evidence'), (node) =>
         node.textContent?.trim(),
       ),
+    contradiction: () =>
+      element.querySelector('.job-card__contradiction')?.textContent?.replace(/\s+/g, ' ').trim() ??
+      null,
     // Read span by span rather than as `textContent`: Angular strips the
     // whitespace between two adjacent elements, so the label and its value would
     // otherwise come back glued together as "Experience0–1 years".
@@ -149,5 +155,54 @@ describe('JobCard', () => {
   it('reports a job carried by more than one source', () => {
     expect(render({ sourceCount: 3 }).text()).toContain('Also listed on 3 sources');
     expect(render({ sourceCount: 1 }).text()).not.toContain('Also listed on');
+  });
+});
+
+/**
+ * M11.10 — the claim the product is built on, made on the card rather than one
+ * navigation away.
+ */
+describe('JobCard — the title/years contradiction', () => {
+  it('names the years the posting itself asked for', () => {
+    const card = render({
+      juniorTitleContradicted: true,
+      requiredMinYears: 5,
+      juniorLevel: 'CLEARLY_EXPERIENCED',
+      juniorScore: 6,
+    });
+
+    expect(card.contradiction()).toBe('! Reads as junior — but asks for 5+ years');
+  });
+
+  it('says nothing when the API did not flag the posting', () => {
+    expect(render().contradiction()).toBeNull();
+  });
+
+  // The flag and the figure come from the same response, but the line quotes the
+  // figure — so without one there is nothing honest to say.
+  it('says nothing when the posting stated no minimum', () => {
+    const card = render({ juniorTitleContradicted: true, requiredMinYears: null });
+
+    expect(card.contradiction()).toBeNull();
+  });
+});
+
+/**
+ * M9.6 — the §6.5 rule, now exercised from the side a list actually reaches:
+ * a search result carries its own evidence, so it earns the number.
+ */
+describe('JobCard — a list result carrying its own evidence', () => {
+  it('shows the number once the signals travel with the job', () => {
+    const card = render({}, { positiveSignals: SIGNALS });
+
+    expect(card.badgeScore()).toBe('94%');
+    expect(card.evidence()).toEqual(['0-1 years of experience']);
+  });
+
+  it('still falls back to the band when a caller passes nothing', () => {
+    const card = render();
+
+    expect(card.badgeScore()).toBeNull();
+    expect(card.badgeBand()).not.toBeNull();
   });
 });

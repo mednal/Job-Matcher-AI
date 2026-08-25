@@ -1,0 +1,40 @@
+:host {
+  display: block;
+}
+
+.multi-value__label {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.multi-value__entry {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.multi-value__entry input {
+  flex: 1;
+  min-width: 0;
+}
+
+.multi-value__hint {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  text-wrap: pretty;
+}
+
+.multi-value__values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The remove control comes from `app-chip` itself — it sits inside the chip, so
+   the chip stays one target the eye reads as a single filter value rather than a
+   label with a button beside it. */

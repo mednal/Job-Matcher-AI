@@ -38,8 +38,8 @@ As of the last update to this file:
 | ---- | ----- |
 | Product / architecture / database design | Written (`PRODUCT.md`, `ARCHITECTURE.md`, `DATABASE.md`). D1–D7 closed; D7 **revised 2026-08-21** to exclude salary, company entities, job taxonomy, and application tracking from the MVP schema (`DATABASE.md` §3.4) |
 | Source adapter architecture | Designed and approved 2026-08-21 (`ARCHITECTURE.md` §6.1, Phase 5 decisions A1–A7). **M5.1–M5.3 implemented 2026-08-22**: `modules/sources/` holds the `JobSourceAdapter` contract, the `SOURCE_ADAPTERS` token, `SourceRegistryService` (descriptors validated at construction, so an invalid or duplicated one aborts boot), the `PaginatedSourceAdapter` base that owns pagination, the `SourceError` hierarchy, the shared `SourceHttpClient` (truthful User-Agent, per-source rate limiting, 5xx/network-only retries, 401/403/429 and block pages as stop conditions), the `describeAdapterContract` conformance suite, and `FixtureSourceAdapter`; `modules/ingestion/` holds M5.3's raw stage — content-hashed `RawJobDocument` writes, canonicalization with `volatilePayloadPaths`, `IngestionRun` bookkeeping, the `RUNNING` guard and the stale-run reaper. `sources.imports.spec.ts` enforces the §4.2 and §7.3 boundaries mechanically. **M5.4 implemented 2026-08-23**, closing the sequencing decision: `JobSourceAdapter` gained `toRawFields`, the payload-to-shared-vocabulary mapping that §4.2 allows only an adapter to perform; `ingestion-plan.ts` holds §6's seeds; `IngestionService` resolves the plan and isolates one source's failure from the next; `JobPipelineService` chains normalize → dedupe → classify → score for one posting; and `RawIngestionService` gained the seed walk and the `JOB_PIPELINE` seam. M5.5–M5.6 follow it. `docs/SOURCES.md` still records **no reviewed sources** — the fixture adapter is not one, and the register now says so explicitly |
-| Angular workspace | **Phase 11 in progress, M11.1–M11.7 done.** M11.2 replaced the welcome page with a shell (header, nav, router outlet, footer carrying the "not a prediction of getting hired" line) over a lazy route table, with the design tokens as CSS custom properties on `:root`. M11.3 built `core/` — API models, four typed clients, the token-attaching interceptor with a single shared refresh-on-401, `AuthService` and the auth guard. M11.4 added the login and register screens, a sanitized `redirectTo`, and a session-aware header. **M11.5 adds `shared/`**: five `ui/` primitives applied as attributes to native elements, `junior-score-badge`, `signal-list` and the `job-card` that composes them. §6.5's rule is structural rather than a convention — the badge shows the number only when the caller states its evidence is on the page, and `job-card` derives that from the signals it was given rather than trusting anyone; the search list, whose `JobSummary` carries no signals, therefore shows the `JuniorLevel` band, which is what §6.5 prescribes. `score-naming.spec.ts` is now mirrored on the frontend over `.ts` and `.html`, and `signal-labels.spec.ts` reads the backend's `SIGNAL_WEIGHTS` so the two vocabularies cannot drift. **M11.6 adds the search page 2026-08-24**: `features/search/` — the query box, the collapsible filter panel, the result list and previous/next pagination, with `search-query-params.ts` as the whole of the URL mapping. The address bar holds the search and nothing else does: the route's params are parsed into a `SearchQuery`, `rxResource` derives the request from it, and every control navigates rather than setting local state, so a reload and a shared link run the same path a fresh visit runs. Parsing drops an unusable parameter instead of the URL around it, never writes a value the API already defaults to, and never truncates a country code. The panel is a draft over that truth — it neither calls the API nor navigates — and `sort` stays the page's, so applying a filter cannot reset an ordering. **M11.7 adds the job detail page 2026-08-24**: the full description as the paragraphs it was written as (plain text, bound as text — nothing from a source goes near `innerHTML`), the metadata row, every technology, and the classification explanation. This is the page the score is a number on, and for the reason §6.5 gives: `GET /jobs/:id` returns the signals `JobSummary` omits, so the evidence is beside the figure — still derived from the signals that will actually render, so an unclassified job falls back to the band on its own. Every source is linked out with its `attributionText` (§7.4), a merged-away id is corrected in the address bar so a shared link keeps working, a 404 is a page rather than an alert, and a posting no source lists any more says so instead of hiding. M11.8–M11.9 are the remaining pages. 258 tests across 27 suites |
-| NestJS backend | Config, validation pipe, CORS, `/api/v1/health` (now `@Public()`), plus a working `AuthModule` and `UsersModule`: register, login, argon2id hashing, JWT access tokens, refresh-token rotation/revocation, logout, a global `JwtAuthGuard`, and `GET /users/me`. M3.5/M3.6 close Phase 3: a second global `RolesGuard` with a `@Roles()` decorator (metadata opt-in, role read from the database rather than the token so a demotion takes effect immediately) and a `ProfilesModule` serving `GET`/`PUT /profiles/me` (`PUT` replaces rather than merges; a user who has never saved one gets an empty profile, not a 404; ownership is structural because no route names a profile by id). **Phase 3 is complete.** No admin route exists yet to point `RolesGuard` at — the first is M5.5's ingestion trigger — so its e2e declares a test-only `@Roles(ADMIN)` controller, keeping D4's "no admin surface" intact. M4.1/M4.2 add `JobsModule`: `GET /jobs/:id` (detail with classification evidence, every source URL and its attribution, resolving `mergedIntoJobId` through a redirect) and `GET /jobs` (the `{ items, page, pageSize, total }` envelope, `pageSize` ≤ 50, inactive and merged jobs excluded), both public, plus the shared pagination DTOs in `common/dto/`. **Phase 4 is complete** — the read side serves the seeded jobs, so Phase 11 is unblocked. **M9.1 opens Phase 9**: `SearchModule` serves `GET /jobs/search` (public), with `search.repository.ts` holding the only raw SQL on the read side — a `websearch_to_tsquery` against `Job.searchVector` built through the *same* per-row `CASE` on `language` the generated column was written with, ranked by `ts_rank` over the write-time A/B/C weights and paged in the shared envelope. `textSearchConfiguration` moved from `normalization/language.ts` to `common/utils/` (the `ascii-fold` precedent) so the read side does not import a pipeline module, and a unit test reads M2.6's migration to catch drift. **M9.2 adds the nine filters of §8.1** — `technologies[]` (GIN overlap, so a second chip widens), `locations[]` (case-insensitive substring, ORed, wildcards escaped), `countryCode`, `workplaceType[]`, `employmentType[]`, `juniorLevel[]` (enum `IN` with the cast on the parameters so the level index survives), `minJuniorScore`, `maxYearsRequired` and `postedWithinDays` — each a separate `Prisma.Sql` fragment ANDed onto the structural exclusion, so an unrequested filter contributes no SQL. A `NULL` column is answered two different ways on purpose: `maxYearsRequired` keeps a job that states no minimum (absence of a barrier) while `minJuniorScore` and the enum facets drop one that states nothing (absence of evidence). Comma-splitting is allowed only for slugs and enum members, never for free-text locations. **M9.3 closes the ordering**: `sort` accepts `relevance` (the default), `juniorScore` (`NULLS LAST`, or the highest scores would open with the unscored) and `postedAt`, each ending in M4.2's `effectivePostedAt DESC, id DESC` total order; `relevance` blends text rank, `juniorScore/100` and a 30-day recency half-life at `0.5/0.35/0.15`, tuned in M12.3. `PRODUCT.md` §8's default result set hides `EXPERIENCED` and `CLEARLY_EXPERIENCED`, with naming a level in `juniorLevel[]` as the opt-in and an explicit `IS NULL` branch so an unclassified job is not silently dropped by three-valued logic. **M9.4 closes the envelope and validation**, and fixed a real 500 while doing it: `page` had no upper bound, so `?page=1e20` passed validation (`Number.isInteger(1e20)` is `true`), became an `OFFSET` past PostgreSQL's `bigint` and failed inside the driver — on `/jobs` as well, since both share `PaginationQuery`. `MAX_PAGE = 200` bounds it at 10 000 results deep, and the shared DTO now has its own spec (`common/dto/pagination.query.spec.ts`) rather than being asserted only through whichever endpoint happened to exercise it. **M9.5 closes Phase 9** with query-time profile-fit ranking: `/jobs/search` moved from `@Public()` to a new `@OptionalAuth()` — the guard M4.2 said this would need, since `@Public()` returns before a token is read and left a signed-in caller anonymous — and `relevance` gains a fourth term worth `0.2`, with the other three scaled by `0.8` so an anonymous request is ranked by the identical expression as before. Fit follows the token, not a parameter (§8.1 declares none, so `?profileFit=` is still a 400): technology overlap saturating at three matches, ORed with a binary hit on the profile's free-text `locations` or its `countryCodes`. It ranks and never filters — two profiles get the same jobs and the same `total` in a different order — and the stored `juniorScore` is never written. An empty profile, an anonymous request and an explicit `sort` all skip the profile read entirely. **Phase 9 is complete.** **M10.1 opens Phase 10**: `SavedJobsModule` serves `GET`/`POST /saved-jobs` and `DELETE /saved-jobs/:jobId`, all JWT-only — a collection belongs to an account, so unlike `/jobs/search` there is no anonymous answer. Ownership is structural, as in `profiles/`: every query is keyed by the token's `userId`, no route names a `SavedJob` by its own id, and the row id is not even in the response. Saving is an `upsert` on the `(userId, jobId)` unique with an empty `update`, so idempotency is a database property rather than a racy read-then-write and `createdAt` stays at the first save; deleting is a `deleteMany` scoped by user, so another account's row and one that never existed are the same 404 by construction. `DELETE` returns 404 rather than an idempotent 204 — success for a delete that deleted nothing is a lie the client cannot detect. Merged and deactivated jobs are saved and listed rather than filtered (filtering would unsave them on the user's behalf); resolving the redirect and flagging the inactive one is M10.2. `JobsService` gained `exists()` and exported `JOB_SUMMARY_SELECT`, so `prisma.job` keeps one owner and the saved list renders the same card as search. **M10.2 closes Phase 10**: a saved job outlives what the pipeline later does to the job it names. The list resolves `mergedIntoJobId` at read time through a new `JobsService.findCanonicalSummaries()` — M7.4 deliberately never rewrites a `SavedJob`, so the walk belongs on the read side — and flags a deactivated job with `isActive` rather than hiding it. `jobId` keeps reporting the id that was saved, because it is the row the user owns and the id `DELETE` takes, while `job` carries the survivor's card and `redirectedToJobId` names it; a broken merge chain falls back to the row as stored rather than opening a gap in someone's collection. Only rows that are actually tombstones cost a second query. **Phase 10 is complete** |
+| Angular workspace | **Phase 11 complete, M11.1–M11.12 done.** M11.2 replaced the welcome page with a shell (header, nav, router outlet, footer carrying the "not a prediction of getting hired" line) over a lazy route table, with the design tokens as CSS custom properties on `:root`. M11.3 built `core/` — API models, four typed clients, the token-attaching interceptor with a single shared refresh-on-401, `AuthService` and the auth guard. M11.4 added the login and register screens, a sanitized `redirectTo`, and a session-aware header. **M11.5 adds `shared/`**: five `ui/` primitives applied as attributes to native elements, `junior-score-badge`, `signal-list` and the `job-card` that composes them. §6.5's rule is structural rather than a convention — the badge shows the number only when the caller states its evidence is on the page, and `job-card` derives that from the signals it was given rather than trusting anyone; the search list, whose `JobSummary` carries no signals, therefore shows the `JuniorLevel` band, which is what §6.5 prescribes. `score-naming.spec.ts` is now mirrored on the frontend over `.ts` and `.html`, and `signal-labels.spec.ts` reads the backend's `SIGNAL_WEIGHTS` so the two vocabularies cannot drift. **M11.6 adds the search page 2026-08-24**: `features/search/` — the query box, the collapsible filter panel, the result list and previous/next pagination, with `search-query-params.ts` as the whole of the URL mapping. The address bar holds the search and nothing else does: the route's params are parsed into a `SearchQuery`, `rxResource` derives the request from it, and every control navigates rather than setting local state, so a reload and a shared link run the same path a fresh visit runs. Parsing drops an unusable parameter instead of the URL around it, never writes a value the API already defaults to, and never truncates a country code. The panel is a draft over that truth — it neither calls the API nor navigates — and `sort` stays the page's, so applying a filter cannot reset an ordering. **M11.7 adds the job detail page 2026-08-24**: the full description as the paragraphs it was written as (plain text, bound as text — nothing from a source goes near `innerHTML`), the metadata row, every technology, and the classification explanation. This is the page the score is a number on, and for the reason §6.5 gives: `GET /jobs/:id` returns the signals `JobSummary` omits, so the evidence is beside the figure — still derived from the signals that will actually render, so an unclassified job falls back to the band on its own. Every source is linked out with its `attributionText` (§7.4), a merged-away id is corrected in the address bar so a shared link keeps working, a 404 is a page rather than an alert, and a posting no source lists any more says so instead of hiding. **M11.8 adds saved jobs 2026-08-24**: one `SavedJobsStore` behind a `save-toggle` that appears on the search card, the detail page and the saved-jobs row, so a save in one place is reflected in the others without any of them re-fetching. It is optimistic and the store owns the rollback; the write runs on the store's subscription, so unsaving the row a button sits on cannot cancel its own `DELETE`; the control is hidden rather than disabled for a signed-out visitor, because `/saved-jobs` has no anonymous answer. The list is the fetched page filtered live by the store, so unsaving removes a row with no second request, and M10.2's inactive and merged flags are shown rather than hidden. **M11.9 closes Phase 11 2026-08-24**: the profile form (a full-replacement `PUT`, so emptying a list is expressible; the server-normalized response redrawn over what was typed) and `profile-defaults.ts`, which turns a saved profile into the filters a bare `/jobs` starts from — seeded into the address bar so M11.6's single-source rule holds, and never over a URL that already says something. Profile-fit *ranking* needs nothing from the page at all: it follows the access token `authInterceptor` already attaches. `multi-value-field/` and `pagination/` moved to `shared/` for their second caller. **M11.10–M11.12 followed on 2026-08-25**, and the first of them is the one the product was missing: M9.6 put the classification's strongest signals on `JobSummary`, so passing them into `job-card` is all it took for a *search result* to show its Junior Match number beside the posting's own words — the component had taken them as inputs since M11.5 for exactly this, and §6.5's rule went on holding structurally rather than by anyone remembering it. The card also names the case the product exists to catch, from a `juniorTitleContradicted` the API decides with the classifier's own vocabulary (`common/utils/junior-title.ts`, the `ascii-fold` precedent) rather than a second regex in the browser: `Junior Backend Developer (Java)` at 94% quoting "This is an entry level position" now sits directly above `Junior Java Developer` at 6% flagged *reads as junior, asks 5+ yrs*. M11.11 moved the place out of the collapsed panel into a What/Where bar — `PRODUCT.md` §5's own example search leads with a role and a place — reusing `multi-value-field` so several locations survive the promotion, and added the removable filter chips `chip.ts` had carried a TODO for since M11.6; they render from the *URL* rather than the panel's draft, and `activeFilterCount` is now defined as `activeFilters(...).length` so the badge and the row cannot disagree. M11.12 fixed two defects rather than adding a feature: `Profile.yearsOfExperience` was written by the form and read by nothing, and `countryCode` took one code while the profile stores a list, so `profile-defaults.ts` dropped the filter entirely for anyone who named two countries. **Phase 11 is complete.** 322 tests across 32 suites |
+| NestJS backend | Config, validation pipe, CORS, `/api/v1/health` (now `@Public()` and `@SkipThrottle()`), plus a working `AuthModule` and `UsersModule`: register, login, argon2id hashing, JWT access tokens, refresh-token rotation/revocation, logout, a global `JwtAuthGuard`, and `GET /users/me`. M3.5/M3.6 close Phase 3: a second global `RolesGuard` with a `@Roles()` decorator (metadata opt-in, role read from the database rather than the token so a demotion takes effect immediately) and a `ProfilesModule` serving `GET`/`PUT /profiles/me` (`PUT` replaces rather than merges; a user who has never saved one gets an empty profile, not a 404; ownership is structural because no route names a profile by id). **Phase 3 is complete.** No admin route exists yet to point `RolesGuard` at — the first is M5.5's ingestion trigger — so its e2e declares a test-only `@Roles(ADMIN)` controller, keeping D4's "no admin surface" intact. M4.1/M4.2 add `JobsModule`: `GET /jobs/:id` (detail with classification evidence, every source URL and its attribution, resolving `mergedIntoJobId` through a redirect) and `GET /jobs` (the `{ items, page, pageSize, total }` envelope, `pageSize` ≤ 50, inactive and merged jobs excluded), both public, plus the shared pagination DTOs in `common/dto/`. **Phase 4 is complete** — the read side serves the seeded jobs, so Phase 11 is unblocked. **M9.1 opens Phase 9**: `SearchModule` serves `GET /jobs/search` (public), with `search.repository.ts` holding the only raw SQL on the read side — a `websearch_to_tsquery` against `Job.searchVector` built through the *same* per-row `CASE` on `language` the generated column was written with, ranked by `ts_rank` over the write-time A/B/C weights and paged in the shared envelope. `textSearchConfiguration` moved from `normalization/language.ts` to `common/utils/` (the `ascii-fold` precedent) so the read side does not import a pipeline module, and a unit test reads M2.6's migration to catch drift. **M9.2 adds the nine filters of §8.1** — `technologies[]` (GIN overlap, so a second chip widens), `locations[]` (case-insensitive substring, ORed, wildcards escaped), `countryCode`, `workplaceType[]`, `employmentType[]`, `juniorLevel[]` (enum `IN` with the cast on the parameters so the level index survives), `minJuniorScore`, `maxYearsRequired` and `postedWithinDays` — each a separate `Prisma.Sql` fragment ANDed onto the structural exclusion, so an unrequested filter contributes no SQL. A `NULL` column is answered two different ways on purpose: `maxYearsRequired` keeps a job that states no minimum (absence of a barrier) while `minJuniorScore` and the enum facets drop one that states nothing (absence of evidence). Comma-splitting is allowed only for slugs and enum members, never for free-text locations. **M9.3 closes the ordering**: `sort` accepts `relevance` (the default), `juniorScore` (`NULLS LAST`, or the highest scores would open with the unscored) and `postedAt`, each ending in M4.2's `effectivePostedAt DESC, id DESC` total order; `relevance` blends text rank, `juniorScore/100` and a 30-day recency half-life at `0.5/0.35/0.15`, tuned in M12.3. `PRODUCT.md` §8's default result set hides `EXPERIENCED` and `CLEARLY_EXPERIENCED`, with naming a level in `juniorLevel[]` as the opt-in and an explicit `IS NULL` branch so an unclassified job is not silently dropped by three-valued logic. **M9.4 closes the envelope and validation**, and fixed a real 500 while doing it: `page` had no upper bound, so `?page=1e20` passed validation (`Number.isInteger(1e20)` is `true`), became an `OFFSET` past PostgreSQL's `bigint` and failed inside the driver — on `/jobs` as well, since both share `PaginationQuery`. `MAX_PAGE = 200` bounds it at 10 000 results deep, and the shared DTO now has its own spec (`common/dto/pagination.query.spec.ts`) rather than being asserted only through whichever endpoint happened to exercise it. **M9.5 closes Phase 9** with query-time profile-fit ranking: `/jobs/search` moved from `@Public()` to a new `@OptionalAuth()` — the guard M4.2 said this would need, since `@Public()` returns before a token is read and left a signed-in caller anonymous — and `relevance` gains a fourth term worth `0.2`, with the other three scaled by `0.8` so an anonymous request is ranked by the identical expression as before. Fit follows the token, not a parameter (§8.1 declares none, so `?profileFit=` is still a 400): technology overlap saturating at three matches, ORed with a binary hit on the profile's free-text `locations` or its `countryCodes`. It ranks and never filters — two profiles get the same jobs and the same `total` in a different order — and the stored `juniorScore` is never written. An empty profile, an anonymous request and an explicit `sort` all skip the profile read entirely. **Phase 9 is complete.** **M10.1 opens Phase 10**: `SavedJobsModule` serves `GET`/`POST /saved-jobs` and `DELETE /saved-jobs/:jobId`, all JWT-only — a collection belongs to an account, so unlike `/jobs/search` there is no anonymous answer. Ownership is structural, as in `profiles/`: every query is keyed by the token's `userId`, no route names a `SavedJob` by its own id, and the row id is not even in the response. Saving is an `upsert` on the `(userId, jobId)` unique with an empty `update`, so idempotency is a database property rather than a racy read-then-write and `createdAt` stays at the first save; deleting is a `deleteMany` scoped by user, so another account's row and one that never existed are the same 404 by construction. `DELETE` returns 404 rather than an idempotent 204 — success for a delete that deleted nothing is a lie the client cannot detect. Merged and deactivated jobs are saved and listed rather than filtered (filtering would unsave them on the user's behalf); resolving the redirect and flagging the inactive one is M10.2. `JobsService` gained `exists()` and exported `JOB_SUMMARY_SELECT`, so `prisma.job` keeps one owner and the saved list renders the same card as search. **M10.2 closes Phase 10**: a saved job outlives what the pipeline later does to the job it names. The list resolves `mergedIntoJobId` at read time through a new `JobsService.findCanonicalSummaries()` — M7.4 deliberately never rewrites a `SavedJob`, so the walk belongs on the read side — and flags a deactivated job with `isActive` rather than hiding it. `jobId` keeps reporting the id that was saved, because it is the row the user owns and the id `DELETE` takes, while `job` carries the survivor's card and `redirectedToJobId` names it; a broken merge chain falls back to the row as stored rather than opening a gap in someone's collection. Only rows that are actually tombstones cost a second query. **Phase 10 is complete**. **M9.6 added 2026-08-25**, reopening Phase 9 for the one thing the read side was withholding: `JobSummaryResponse` now carries the current classification's strongest signals, capped at two per polarity by absolute weight with a *stable* tie-break, so two requests for one job cannot show different evidence. §6.5 lets a client render the score only where its evidence is on the same page, and until now no list endpoint returned any — which is why the search page could only ever show a `JuniorLevel` band and the posting that titles itself junior and then demands five years looked exactly like an honest one. `fromEntity` reads *both* row shapes (the nested `classifications` a Prisma select produces and the flat pair a correlated subquery returns), so all four call sites are untouched; `JOB_SUMMARY_SELECT` gained one include rather than a second query, which gave `/jobs` and `/saved-jobs` evidence at the same time; and `search.repository.ts` follows `SOURCE_COUNT`'s precedent so the outer query keeps one row per job and M2.5's partial unique index answers the lookup. M11.10's `juniorTitleContradicted` is computed here too, from `common/utils/junior-title.ts`, and reads only the *stated* minimum — a posting asking for nothing never trips it. **M11.12 closes two long-standing gaps**: `Profile.yearsOfExperience` finally ranks (a posting within one year of the caller's experience scores the term, an unstated minimum sits at a neutral 0.5, and zero years is passed as `null` so an untouched profile does not acquire a term its owner never asked for), which turned M9.5's two fit shares into a normalized table — a generalization that still yields exactly 0.6/0.4 for the two-side case and leaves the outer 0.8/0.2 split alone; and `countryCode` became a list, matched with `= ANY(...)` so the index stays usable, so a profile naming two countries seeds the filter instead of losing it. The profile still ranks and never filters. **M1.4 closes Phase 1**, last because the cross-cutting layer wraps a request pipeline that had to exist first: `common/filters/all-exceptions.filter.ts` normalizes every failure into `{ statusCode, message, error, requestId }` and turns anything that is not an `HttpException` into a bare 500, so stacks and Prisma messages stay server-side by construction; `common/middleware/request-id.middleware.ts` assigns the id before the guards run (a 401 from the global `JwtAuthGuard` has to carry one) and writes the access line from the response's `finish`, so every outcome is logged exactly once; `main.ts` installs `ConsoleLogger({ json: true })`; and `common/throttling/` registers two named throttlers — the stricter one selected by the `/auth/` path rather than by a decorator — before `AuthModule`, so a credential flood is turned away before argon2 and the database. `THROTTLE_*` added to config, Joi and `.env.example` |
 | PostgreSQL / Prisma | Postgres 18 runs in Docker on host port 5433. `prisma/schema.prisma` now holds `User`, `Profile`, `RefreshToken`, `UserRole`, `WorkplaceType` (M2.2's slice, migration `20260821171157_add_user_auth_tables`) plus `JobSource`, `IngestionRun`, `RawJobDocument`, `AccessMethod`, `IngestionStatus`, `IngestionTrigger` (M2.3's slice, migration `20260821180642_add_source_ingestion_tables`) plus `JobPosting`, `Job` and `EmploymentType` (M2.4's slice, migration `20260821182202_add_job_tables`) plus `JobClassification`, `SavedJob`, `JuniorLevel` and `Job`'s denormalized classification block (M2.5's slice, migration `20260821184731_add_classification_saved_job_tables`, which also hand-writes the partial unique index enforcing one current classification per job). Every MVP table of `DATABASE.md` §3 now exists. M2.6's slice (migration `20260821190950_add_search_indexes_and_checks`, commit `f3cb483`) adds the raw SQL of §5: the `pg_trgm` extension, the generated `Job.searchVector` column, GIN indexes on `searchVector`, `technologies` and `normalizedTitle` (trigram), the partial `Job_active_search_idx`, and all four CHECK constraints — so §7's index inventory is 25/25 complete. The three GIN indexes are also declared in `schema.prisma` purely to stop Prisma proposing to drop them; see M2.6's fragile-point note before running `prisma migrate dev`. M2.7 closes Phase 2: `prisma/seed.ts` + `prisma/seed-data.ts`, run with `npm run db:seed`, write a demo user, a demo admin, two fixture sources and 10 fixture jobs with one classification each, idempotently. **Phase 2 is complete.** |
 | Development fixtures | Seeded (M2.7). 10 jobs covering all five `JuniorLevel` bands, English and German, the adversarial "Junior title / 5+ years body" case, a two-source job, an inactive job and a merged-away job. Hand-written, not classifier output — stamped `classifierVersion = "seed-fixture-1.0"`. This is the corpus Phases 6–8 should be checked against |
 | Normalization | **M6.1 implemented 2026-08-22**: `modules/normalization/` holds the text stage — `htmlToPlainText` (markup to plain text preserving paragraph and list breaks, non-prose elements dropped with their content, entities decoded last) and `normalizePlainText` (NFKC, invisible and control characters removed, whitespace and bullet markers folded, idempotent), behind an injectable `TextNormalizationService` with a three-pair fixture corpus. **M6.2 implemented 2026-08-22**: `company-slug.ts` (`toCompanySlug` — German-style ASCII folding so `Müller`/`Mueller`/`Muller` are one slug, joining punctuation deleted, trailing legal forms stripped repeatedly and only at the end, a name that is *only* a legal form kept intact), `location.ts` (`parseLocation` — free text into a display `location` plus an ISO alpha-2 `countryCode` from a curated English/German alias table, with **no city-to-country inference**, since `countryCode` feeds `dedupHash` and tier 3 covers the resulting split while nothing covers a false merge), the shared `ascii-fold.ts` (moved to `common/utils/` by M7.2, which needs the same folding and may not import this module), and `CompanyLocationService` — pinned by spec against both the fixture payloads and the seeded slugs. **M6.3 implemented 2026-08-22**: `phrase-match.ts` (ASCII-folded, token-aligned phrase matching with a three-token negation window), `workplace-type.ts` (REMOTE/HYBRID/ONSITE in English and German, title and location consulted before the description, remote-plus-onsite evidence resolving to HYBRID), `employment-type.ts` (the five-member enum, narrower arrangement winning so a Werkstudent posting is not recorded as PART_TIME), `technologies.ts` (a curated closed dictionary with its own symbol-aware boundaries, so `c#`, `.net` and `node.js` survive matching that `java` inside `javascript` does not), and `JobAttributesService`. Both detectors accept a `declared` value the adapter layer has already mapped to the enum, which wins over the text; `null` stays a real answer for both columns. **M6.4 implemented 2026-08-22**: `language.ts` (`detectLanguage` — stopword-frequency scoring over two deliberately disjoint English/German function-word sets, a supported `declared` code winning outright, English as the fallback for ties, unsupported codes and evidence-free input, and a floor of two German hits so one stray token cannot re-stem a description) plus `textSearchConfiguration`, which mirrors the `CASE` in the `searchVector` generated column by hand and is what M9.1 must build its `tsquery` through. Pinned against all ten seeded jobs and the three M6.1 HTML fixtures. **Phase 6 is complete.** `NormalizationModule` is imported by `IngestionModule` as of M5.4 |
@@ -133,12 +133,85 @@ health check.
 - Verify: `npm test` in `backend/` passes (currently 1 suite, 1 test).
 
 ### M1.4 — Cross-cutting concerns
-- [ ] Global exception filter producing `{ statusCode, message, error, requestId }`
-- [ ] Request-id interceptor and structured JSON logging
-- [ ] Internal errors never leak stack traces or Prisma messages
-- [ ] `@nestjs/throttler` global rate limit, stricter on `/auth/*`
-- [ ] Shared pagination DTO in `common/dto`
+- [x] Global exception filter producing `{ statusCode, message, error, requestId }`
+- [x] Request-id interceptor and structured JSON logging
+- [x] Internal errors never leak stack traces or Prisma messages
+- [x] `@nestjs/throttler` global rate limit, stricter on `/auth/*`
+- [x] Shared pagination DTO in `common/dto`
 - Verify: an e2e test asserts the error envelope shape and that a 500 leaks nothing.
+- Verified 2026-08-24: `common/` gained the folders `ARCHITECTURE.md` §4.1 names —
+  `filters/` and (in place of `interceptors/`) `middleware/` — plus `http/` and
+  `throttling/`. Backend `npm test` is 1124 tests across 69 suites, up from 1101
+  across 66; `npm run test:e2e` is 258 across 16, up from 239 across 14.
+  `npm run build` and `npm run lint` are clean. `test/errors.e2e-spec.ts` is the
+  `Verify:` line: it asserts the envelope on a 404, a 401, a validation 400 and the
+  router's own 404, and that a thrown `Error` and a `PrismaClientKnownRequestError`
+  both come back as a bare 500 whose serialized body contains neither the stack nor
+  the words `Prisma`, `P2002` or the column the constraint named.
+  - **Not an `HttpException`, not the client's business.** The filter answers
+    everything that is not an `HttpException` with the same bare 500, so a stack
+    trace or a Prisma message — which quotes table and column names — is kept out of
+    a response *by construction*, rather than by every service remembering to catch
+    its own infrastructure errors. Nothing has to be added here when a new failure
+    type appears.
+  - **The detail withheld from the client is logged, against the id the client was
+    given.** A 5xx logs its stack; a 4xx logs a one-line reason at warn, because an
+    expected 401 is not an incident. Either way the caller can quote `requestId` from
+    the response body and the operator can find that exact request.
+  - **`message` keeps NestJS's own shape**, string or the array `ValidationPipe`
+    produces, because the frontend's `toApiError` already reads both and the
+    field-level messages are the useful part of a 400. `requestId` is additive, so no
+    existing client breaks.
+  - **The id is assigned in middleware, not an interceptor, and that is the whole
+    point of the choice.** Nest runs middleware → guards → interceptors, so an
+    interceptor has not run yet when the global `JwtAuthGuard` rejects a request —
+    and a 401 is the most common error this API returns. The milestone says
+    "interceptor"; middleware is where the requirement is actually satisfiable.
+  - **The access line is written from the response's `finish` event** for the same
+    reason: it fires once for every response — handler, guard, throttler, or the 404
+    the router itself produces — so there is one log site rather than a success path
+    in an interceptor and an error path in the filter, which would have to be kept
+    in step.
+  - **A caller's own `X-Request-Id` is echoed** so a frontend trace spans the call,
+    but only if it matches `[A-Za-z0-9._-]{1,128}`; anything else is replaced. The id
+    is written into a JSON log line, and an unbounded header value is how a caller
+    forges log entries.
+  - **`ConsoleLogger({ json: true })` rather than a logging framework or a
+    hand-written logger.** Nest 11 ships JSON output that already extracts the
+    context and the stack; the filter and the middleware log objects, which it
+    renders as fields. Same format in development as in production — the format you
+    debug against is the format you ship.
+  - **The stricter `/auth/*` limit follows the path, not a decorator.** The limits are
+    configuration read at boot and a decorator takes its numbers at import time, so
+    the auth limit is a second named throttler that skips itself on every other path.
+    A new route under `/auth/` is covered without being told to be.
+  - **RECORDED HAZARD — a named throttler's `skipIf` replaces the module-level one.**
+    `ThrottlerGuard` reads `namedThrottler.skipIf || commonOptions.skipIf`, so the
+    `THROTTLE_ENABLED` check has to be repeated inside every throttler that defines
+    its own. Setting it once at module level turned off the global limit and left the
+    auth limit running — `auth.e2e-spec.ts` caught it. Do not "de-duplicate" it back.
+  - **Rate limiting runs before authentication**, because `ThrottlingModule` is
+    imported before `AuthModule` and global guards run in registration order. A flood
+    of guessed credentials is turned away before it reaches argon2 and the database.
+  - **Health is exempt.** A load balancer polling liveness every few seconds is the
+    expected traffic there, and a probe answered with 429 would report a healthy
+    application as down.
+  - **The limiter is on by default and the e2e suite turns it off for itself**
+    (`test/setup-e2e.ts`), because the suite sends more requests from one address in
+    a minute than any real client would. `throttling.e2e-spec.ts` turns it back on
+    with small limits and is the only place it is exercised — otherwise adding a test
+    to `auth.e2e-spec.ts` could fail an unrelated one further down the file.
+  - **Two indistinguishability tests had to be taught about the id**: the 401 for an
+    unknown email versus a wrong password, and the 404 for another user's save versus
+    one that never existed, both compared whole response bodies. They now compare
+    them without `requestId`, which is what a caller can actually learn.
+  - The shared pagination DTO was already in `common/dto` — M4.2 put it there — and
+    is ticked as found rather than as newly written.
+  - Not done, deliberately: no request-scoped logger context, so a service still logs
+    without the request id unless it is handed one; and no `blockDuration` on the
+    throttler, so a blocked caller is let back in when the window rolls rather than
+    being locked out for longer. Neither is asked for, and M13.1 sets the production
+    numbers.
 
 ---
 
@@ -2187,6 +2260,47 @@ Goal: `GET /jobs/search` answers "show me jobs I should realistically consider".
     this milestone's code present, and each passes alone. `--runInBand` is green:
     13 suites / 211 tests.
 
+
+### M9.6 — Evidence in the list projection
+- [x] `JobSummaryResponse` carries the current classification's strongest signals,
+      capped at `SUMMARY_SIGNAL_LIMIT` (2) per polarity
+- [x] Served by `/jobs/search`, `/jobs` and `/saved-jobs` from one projection
+- [x] An unclassified job returns two empty arrays, not a missing field
+- Verify: `/jobs/search` returns the adversarial fixture with a `negativeSignals`
+  entry whose `evidence` is a verbatim substring of its description.
+- Verified 2026-08-25: the reason the search page could only ever show a
+  `JuniorLevel` band. §6.5 permits the *number* only where its evidence is on the
+  same page, and the list endpoints returned none — so the posting that titles
+  itself junior and then demands five years was indistinguishable from an honest
+  one until you opened it. Backend `npm test` 1133 across 70 suites (from 1124
+  across 69); `npm run test:e2e` 262 across 16 (from 258).
+  - **`fromEntity` reads two row shapes, so no call site changed.** The Prisma
+    path produces `classifications: [{…}]` from a nested select; the search path
+    produces two flat columns, because a correlated subquery returns a column and
+    not a relation. `readSignals` checks the nested shape first and falls back to
+    the flat pair, which keeps all four callers (`jobs.service.ts` ×2,
+    `search.service.ts`, `saved-job.response.ts`) exactly as they were.
+  - **One `include`, not a second query, and one projection, not three.**
+    `JOB_SUMMARY_SELECT` already owned this projection for `/jobs` and
+    `/saved-jobs`, so adding the relation there gave both endpoints evidence
+    together. `saved-jobs.service.spec.ts` asserts the select by spreading the
+    same constant, so it stayed green by construction.
+  - **The raw path uses a correlated subquery, following `SOURCE_COUNT`'s
+    precedent** rather than a `LEFT JOIN LATERAL`: the outer query keeps one row
+    per job, so `LIMIT` still means "this many jobs". Both subqueries are answered
+    by M2.5's partial unique index over `jobId WHERE isCurrent`.
+  - **The cap is by absolute weight, and the sort is stable.** Weight carries the
+    polarity's sign, so each stored array is one-signed and `Math.abs` orders
+    within it; equal weights keep extraction order, which `signals.ts` defines as
+    earliest occurrence. Without that, two requests for one job could show
+    different evidence on different pages.
+  - **Malformed JSON costs its own entry, not the card.** The columns carry no
+    database constraint (`DATABASE.md` §4.1), and `toSignals` — reused from
+    `job-detail.response.ts` rather than written a second time — drops what does
+    not parse.
+  - Cost: about 500 B per job, so a 20-job page grew by roughly 10 kB. That is
+    the price of the product working on the page where the decision is made.
+
 ---
 
 ## Phase 10 — Saved Jobs
@@ -2730,14 +2844,232 @@ Goal: the product is usable in a browser.
     clean, Prettier-clean on every file touched.
 
 ### M11.8 — Saved jobs page
-- [ ] List, unsave, empty state
-- [ ] Save and unsave from the job card and the detail page, with optimistic UI
+- [x] List, unsave, empty state
+- [x] Save and unsave from the job card and the detail page, with optimistic UI
 - Verify: saving from search reflects immediately on the saved-jobs page.
+- Verified 2026-08-24: three pieces rather than one page — `core/saved-jobs/saved-jobs-store.ts`
+  (the shared state), `shared/save-toggle/` (the control) and `features/saved-jobs/`
+  (the list). 299 frontend tests across 32 suites, up from 258 across 27.
+  `npm run build` is clean; the initial bundle is unchanged at 284 kB and the page
+  is a 4.85 kB lazy chunk. The `Verify:` line is structural rather than one test:
+  the search cards and the saved-jobs list read the *same* `SavedJobsStore.ids`, and
+  `saved-jobs-store.spec.ts` pins that a save is visible in `ids` before the request
+  settles.
+  - **One store, three places.** The control appears on the search card, the job
+    detail page and the saved-jobs row, and all three read one signal. A second copy
+    of "is this saved" is what would let two places on the same screen disagree, so
+    there is not one — the card still knows nothing about saving and takes the
+    control through M11.5's `card-actions` slot.
+  - **Optimistic, and the rollback lives in the store.** `save`/`remove` write the id
+    first and undo it if the request fails, so `SaveToggle` only has to notice the
+    failure and say so. The message reads off the state it rolled back *to*, which is
+    the state the failed action was trying to leave.
+  - **A write outlives the control that started it.** Unsaving on the saved-jobs page
+    destroys the very row the button sits on, so the request runs on the store's own
+    subscription and reports its outcome through a `ReplaySubject`; an unsubscribing
+    caller cannot cancel a `DELETE` already in flight. The component guards its own
+    signals with `takeUntilDestroyed`.
+  - **Hidden for a signed-out visitor, not disabled.** `/saved-jobs` is JWT-only end
+    to end (§8), so there is no anonymous action this button could take, and a control
+    that only ever answers 401 is worse than no control. `/saved` sits behind
+    `authGuard` for the same reason.
+  - **Unsaving removes the row immediately, with no second request.** The list is the
+    page the API returned, filtered live by the store's ids. The page seeds the store
+    with the ids it actually fetched, so a row on screen is never mistaken for
+    unsaved — which also bounds the store's one known limitation: the background load
+    reads a single page of 50, so a user with more saves than that sees a stale
+    "Save" on a card beyond the cap. Saving and unsaving still work for any job; only
+    the label is affected, and never on the saved-jobs page itself.
+  - **A session ending clears what the store knew**, so the next sign-in on a shared
+    machine does not inherit the previous account's saves.
+  - **M10.2's two flags are shown, not hidden**: a posting no source lists any more
+    says so, and one merged into another listing says the current listing is what is
+    on screen. `jobId` stays the id that was saved — the row the user owns, and the id
+    `DELETE` takes — while the card renders the survivor.
+  - Not done, deliberately: paging here is component state rather than the URL.
+    Nothing asks for §8.1's shareable-search property on a private collection, and a
+    saved page number is not a link worth sending anyone.
 
 ### M11.9 — Profile page
-- [ ] Edit titles, locations, technologies, workplace types, max years
-- [ ] The profile feeds default search filters and profile-fit ranking
+- [x] Edit titles, locations, technologies, workplace types, max years
+- [x] The profile feeds default search filters and profile-fit ranking
 - Verify: saving a profile changes the default search result ordering.
+- Verified 2026-08-24: `features/profile/` plus `features/search/profile-defaults.ts`.
+  `multi-value-field/` and `pagination/` moved from `features/search/` to `shared/` —
+  the profile form needs the same list control, and a feature folder is the wrong
+  owner for something two features import; `multi-value-field` gained a `maxValues`
+  input, because the profile's cap and the search's are different numbers. The profile
+  page is a 10.0 kB lazy chunk. The `Verify:` line spans both ends: the *ordering* is
+  M9.5's, already pinned on the backend and reached from here without a parameter, and
+  `search-page.spec.ts` pins the half the frontend owns — a signed-in visitor arriving
+  at a bare `/jobs` starts from the filters their saved profile implies.
+  - **The form is the whole profile, every time.** `PUT /profiles/me` replaces rather
+    than merges (§8 lists no PATCH), so `submit` sends every field the form owns. That
+    is what makes emptying a list expressible at all — a form posting only what changed
+    could never say "no locations". The one exception is `displayName`, whose DTO takes
+    a non-empty string or nothing, so a cleared box is sent by omission.
+  - **What comes back replaces what was typed.** The server lowercases technology
+    slugs, uppercases country codes and collapses duplicates as it writes, so the saved
+    response is fed back into the form. The user then sees the vocabulary the search
+    actually matches against rather than the spelling they used.
+  - **Ranking follows the token, not the page.** A signed-in search gets M9.5's
+    profile-fit term because `authInterceptor` attaches the access token; the page
+    sends no flag, and `?profileFit=` is still a 400. Saving a profile therefore
+    re-orders every subsequent search without the search page knowing anything
+    happened.
+  - **The filters are seeded into the address bar, not into hidden state.** A bare
+    `/jobs`, signed in, reads the profile once and replaces the URL with the filters it
+    implies — so M11.6's single-source rule survives: the seeded filters are visible in
+    the panel, removable with "Clear all", and the resulting link means the same thing
+    for whoever it is sent to. A URL that already carries any parameter is left alone,
+    including the bare URL "Clear all" itself produces, which is why the decision is
+    read from the snapshot rather than from every navigation — otherwise the button
+    would be undone the moment it was pressed. `replaceUrl` keeps the unseeded URL out
+    of the history, and the blank search still runs while the profile is read, so an
+    anonymous visitor — the common case — waits on nothing.
+  - **Only profile fields with a filter of the same meaning are carried over.**
+    `desiredRoles` is not joined into `q` (a list of preferences is not a phrase
+    anybody wrote), and `countryCodes` is carried only when the profile names exactly
+    one, because the search takes a single code and picking the first of several would
+    silently narrow the search to a country the user never singled out. Every list is
+    trimmed to `MAX_FILTER_VALUES`, the search endpoint's cap, which is smaller than
+    the profile's own.
+  - **The profile ranks; it never filters.** The page says so in as many words, because
+    a profile that quietly hid jobs would be the opposite of what the product promises.
+  - Not done, deliberately: no client-side mirror of the server's validation beyond the
+    input caps. A rejected value comes back naming the field it came from, and a second
+    copy of those rules here is a second thing to keep in step.
+
+### M11.10 — The result card proves its verdict
+- [x] `JobSummary` carries the signals M9.6 added; both list pages pass them to `job-card`
+- [x] A search result shows the Junior Match number beside the posting's own words
+- [x] A junior title over a stated floor of 3+ years is named on the card
+- Verify: searching `java` shows the adversarial fixture's number, its caution row
+  and its verbatim excerpt without opening the job.
+- Verified 2026-08-25: frontend 304 tests across 32 suites (from 299). The seeded
+  corpus now answers `/jobs/search?q=java` with `Junior Backend Developer (Java)`
+  at 94% quoting "This is an entry level position", directly above
+  `Junior Java Developer` at 6% flagged *reads as junior, asks 5+ yrs* and quoting
+  "5+ years of professional experience with Java and Spring Boot". Those two cards
+  side by side are the product.
+  - **Almost all of this was one binding.** `job-card.ts` already derived
+    `evidenceShown` from `hasVisibleEvidence()` and already took the signals as
+    *inputs* rather than reading them off the job, with a comment saying so — the
+    component was written for a list endpoint that would grow them. Passing
+    `job.positiveSignals` in is what makes the number appear; §6.5 keeps holding
+    structurally rather than by anyone remembering it.
+  - **The contradiction is decided by the API, not the client.** Recomputing a
+    junior-title regex in the browser would put the vocabulary in two places, and
+    `signal-labels.spec.ts` exists because that kind of drift bites. So
+    `JobSummaryResponse` gained `juniorTitleContradicted`, computed with the same
+    pattern and the same threshold the classifier decided the level with.
+  - **`JUNIOR_TITLE_PATTERN` and `EXPERIENCED_FLOOR_YEARS` moved to
+    `common/utils/junior-title.ts`** — the `ascii-fold` (M7.2) and
+    `text-search-configuration` (M9.1) precedent, for the same reason: a second
+    module needs them and `jobs/` may not import the pipeline. `level-rules.ts`
+    imports them back, so the line between "junior enough" and "not" is drawn in
+    exactly one place. No verdict changed.
+  - **It reads only the *stated* minimum.** A posting asking for nothing (`null`)
+    never trips it: absence of a figure is not evidence of a contradiction, and
+    claiming one would be the overreach this product exists to complain about.
+    The senior half of the vocabulary is not consulted either — "Senior Engineer,
+    5 years" is a posting being honest, and its level already keeps it out of the
+    default result set.
+  - **`JobDetail` drops the three summary-only fields** rather than inheriting
+    them. `GET /jobs/:id` returns the *complete* signal set under `classification`
+    and states both halves of the contradiction in full, so inheriting the capped
+    arrays would have been a type that lied about the response.
+  - Not done, deliberately: no contradiction banner on the detail page. It already
+    shows the experience range and every signal with its excerpt, so the shorthand
+    would restate what is on screen.
+
+### M11.11 — What / Where, and filters you can see
+- [x] Keyword and location side by side in an always-visible bar
+- [x] Every active filter rendered as a removable chip, plus "Clear all"
+- [x] `chip.ts` gains the remove control it has carried a TODO for since M11.6
+- Verify: from `?q=java&locations=Berlin&workplaceType=REMOTE&maxYearsRequired=2`,
+  removing "Remote" leaves the other three parameters untouched in the address bar.
+- Verified 2026-08-25: frontend 318 tests across 32 suites (from 304).
+  - **Location was behind a collapsed `<details>`**, next to a raw two-letter
+    country box, while `PRODUCT.md` §5's own example search leads with "Java
+    Developer" and "Germany". A place cannot be a disclosure widget in a job
+    search.
+  - **Where reuses `multi-value-field` rather than becoming a text box.**
+    `locations` is a list on the wire and several of them widen the search, so a
+    single box would have had to drop the extra values or hide them. Reusing the
+    component means the bar changed and `SearchQuery` did not.
+  - **The chips describe the URL, so they live on the page, not in the panel.**
+    The panel holds an unsubmitted draft; chips rendered from it would show
+    filters that are not actually on. Removing one navigates, exactly as every
+    other control on this page does — and because the chip carries the query
+    *without* it, an unsubmitted edit in the panel cannot be applied by removing a
+    chip.
+  - **`activeFilterCount` is now defined as `activeFilters(...).length`.** The
+    "N on" badge and the row of chips read one description of what a filter is, so
+    a filter added to one is counted by the other without anyone remembering.
+  - **`without` is a whole `SearchQuery`, not a key to delete**, because removing
+    one of three technologies has to leave the other two — a key cannot say that.
+    Every removal returns to page one, the rule `applyFilters` already followed.
+  - **The chip's label is not clickable; only the × is.** Clicking the word
+    "Remote" to remove the Remote filter is a guess about intent with no undo
+    beside it. `removable` is opt-in rather than inferred from whether anyone
+    listens to `remove`, so a chip that merely labels a technology on a card
+    cannot grow a control by accident.
+  - **"Clear all" beside the chips keeps `q`.** Clearing filters is not abandoning
+    the search; the panel's own "Clear all" empties both, because there it sits
+    beneath the whole form.
+
+### M11.12 — Profile fit: use what is stored, stop dropping the country
+- [x] `Profile.yearsOfExperience` ranks: a posting within reach of the caller's
+      experience scores the fit term
+- [x] `countryCode` widened to a list, so a profile naming two countries seeds it
+- [x] The profile still ranks and never filters
+- Verify: two profiles differing only in stated years order the same query
+  differently while returning the same ids and the same `total`; a profile with
+  `["DE","AT"]` seeds both codes into the address bar.
+- Verified 2026-08-25: backend 1143 unit across 70 suites and 268 e2e across 16;
+  frontend 322 across 32. Both halves fixed defects rather than adding features.
+  - **`yearsOfExperience` was written by the profile form and read by nothing.**
+    It now takes a share of the fit term: a posting whose stated minimum is within
+    one year of the caller's experience scores 1, beyond it 0, and a posting
+    stating no minimum sits at a neutral 0.5. The midpoint is the honest encoding
+    of "no evidence" — treating silence as a perfect fit would float every
+    unstated job to the top of a personalized search.
+  - **Zero years is passed as `null`, not as `0`, and that is the whole subtlety.**
+    The column is non-null and defaults to 0, so it is the one field holding a
+    value for a profile that never mentioned it; reading it literally would give
+    every untouched profile a ranking term its owner never asked for. At zero the
+    term would also restate what `juniorScore` already contributes with a far
+    larger share. It earns its place above zero — the candidate with two years can
+    reach a posting asking for three, and the junior score alone ranks that
+    posting away from them.
+  - **The two shares became a normalized table, which is a generalization and not
+    a re-tune.** M9.5 expressed "a side you left blank forfeits its share to the
+    other"; three sides need a rule rather than a special case, so each share is
+    divided by the total of the sides actually present. With only technologies and
+    place filled in it still yields exactly 0.6 and 0.4. The outer 0.8/0.2 split
+    is untouched, so an anonymous request is still ranked by the identical
+    expression M9.5 left.
+  - **The reach is one year, not more.** A stated minimum is a filter a human
+    wrote, not a measured boundary, and "3+ years" is routinely written by teams
+    who will read a strong two-year CV. Reaching further would start recommending
+    jobs on optimism rather than evidence.
+  - **`countryCode` took one code while `Profile.countryCodes` is a list**, so
+    `profile-defaults.ts` dropped the filter entirely whenever a profile named two
+    — the more carefully someone filled the profile in, the less of it reached
+    their search. It is now a list on both sides, comma-splittable (unlike
+    `locations`) because a country code cannot contain a comma, matched with
+    `= ANY(...)` so `Job_countryCode_workplaceType_idx` stays usable. One bad code
+    fails the request rather than narrowing it silently, and the panel's raw
+    two-letter input became the same `multi-value-field` the profile form uses.
+  - Two existing tests changed meaning rather than breaking: "sends no profile
+    when the saved one names nothing to rank by" used `yearsOfExperience: 1`,
+    which is now something to rank by, and "leaves the country out when the
+    profile names several" is now "carries every country the profile names".
+  - Not done, deliberately: `desiredRoles` as a ranking term (free text needing
+    the text query's stemming, and its weight is M12.3's), and a client-side
+    "matches N of your technologies" badge — it would put the server's fit
+    definition in a second place.
 
 ---
 

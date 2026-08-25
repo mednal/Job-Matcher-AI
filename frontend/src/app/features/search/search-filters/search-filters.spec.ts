@@ -31,6 +31,15 @@ function render(query: SearchQuery = {}) {
       input.dispatchEvent(new Event('input'));
       fixture.detectChanges();
     },
+    /** A `multi-value-field` commits what was typed on Enter (M11.12). */
+    pressEnter(selector: string) {
+      element
+        .querySelector<HTMLInputElement>(selector)!
+        .dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', cancelable: true, bubbles: true }),
+        );
+      fixture.detectChanges();
+    },
     toggle(label: string) {
       this.checkbox(label).dispatchEvent(new Event('change'));
       fixture.detectChanges();
@@ -117,12 +126,15 @@ describe('SearchFilters', () => {
     expect(panel.applied).toEqual([{ juniorLevel: ['CLEARLY_EXPERIENCED'] }]);
   });
 
+  // M11.12 — the country field is a `multi-value-field` now, so a code is added
+  // with Enter like a technology and several of them widen the search.
   it('upper-cases a country code, which the API matches exactly', () => {
     const panel = render();
     panel.type('#search-country', 'de');
+    panel.pressEnter('#search-country');
     panel.submit();
 
-    expect(panel.applied).toEqual([{ countryCode: 'DE' }]);
+    expect(panel.applied).toEqual([{ countryCode: ['DE'] }]);
   });
 
   it('keeps a zero, which is a filter and not an empty field', () => {

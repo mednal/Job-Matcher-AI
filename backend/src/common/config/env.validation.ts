@@ -39,4 +39,13 @@ export const envValidationSchema = Joi.object({
   SOURCE_USER_AGENT_CONTACT: Joi.string()
     .uri({ scheme: ['https', 'mailto'] })
     .default('https://github.com/mednal/Job-Matcher-AI'),
+  // Rate limiting (§9). Defaults must match configuration.ts, which reads
+  // process.env itself. `false` turns the in-process limiter off — for an
+  // environment that limits at the edge, and for the e2e suite, which sends far
+  // more requests from one address in a minute than any real client would.
+  THROTTLE_ENABLED: Joi.boolean().default(true),
+  THROTTLE_TTL_SECONDS: Joi.number().integer().min(1).default(60),
+  THROTTLE_LIMIT: Joi.number().integer().min(1).default(100),
+  // Stricter, because /auth/* is where credentials are guessed.
+  THROTTLE_AUTH_LIMIT: Joi.number().integer().min(1).default(10),
 });

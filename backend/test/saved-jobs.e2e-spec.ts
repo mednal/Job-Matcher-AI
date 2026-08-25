@@ -4,6 +4,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { randomUUID } from 'crypto';
 import { AppModule } from '../src/app.module';
+import { withoutRequestId } from './error-envelope';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { PaginatedResponse } from '../src/common/dto/paginated.response';
 import { AuthTokensResponse } from '../src/modules/auth/dto/auth-tokens.response';
@@ -267,7 +268,9 @@ describe('Saved jobs (e2e)', () => {
       const otherUsers = await unsave(tokenB, someoneElses).expect(404);
       const absent = await unsave(tokenB, neverSaved).expect(404);
 
-      expect(otherUsers.body).toEqual(absent.body);
+      expect(withoutRequestId(otherUsers.body)).toEqual(
+        withoutRequestId(absent.body),
+      );
     });
 
     it('shows each user only their own saves', async () => {

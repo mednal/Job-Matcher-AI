@@ -9,7 +9,14 @@
   font: inherit;
   font-weight: var(--font-weight-medium);
   line-height: var(--line-height-tight);
+  /* Every control in this system is at least 2.25rem tall, so a row of buttons
+     and fields shares one baseline and a finger has a target that clears the
+     24px minimum without the type growing to produce it. */
+  min-height: 2.25rem;
   cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
 }
 
 :host(.ui-button--block) {
@@ -32,6 +39,7 @@
 }
 
 :host(.ui-button--secondary:hover:not(:disabled)) {
+  border-color: var(--color-border-strong);
   background: var(--color-surface-muted);
 }
 

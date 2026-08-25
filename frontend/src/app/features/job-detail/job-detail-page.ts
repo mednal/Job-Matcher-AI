@@ -7,6 +7,7 @@ import { employmentTypeLabel, workplaceTypeLabel } from '../../shared/enum-label
 import { formatExperience } from '../../shared/job-card/experience-label';
 import { postedLabel } from '../../shared/job-card/posted-label';
 import { JuniorScoreBadge } from '../../shared/junior-score-badge/junior-score-badge';
+import { SaveToggle } from '../../shared/save-toggle/save-toggle';
 import { SignalList } from '../../shared/signal-list/signal-list';
 import { hasVisibleEvidence } from '../../shared/signal-list/signal-evidence';
 import { Chip } from '../../shared/ui/chip';
@@ -32,11 +33,12 @@ import { languageLabel } from './language-label';
  * field.
  *
  * The route is public, like the API behind it: a job opened from a shared link is
- * readable without an account. Saving it is M11.8.
+ * readable without an account. `SaveToggle` hides its own control for a
+ * signed-out visitor, so this page does not gate it separately.
  */
 @Component({
   selector: 'app-job-detail-page',
-  imports: [Chip, EmptyState, JuniorScoreBadge, RouterLink, SignalList, Spinner],
+  imports: [Chip, EmptyState, JuniorScoreBadge, RouterLink, SaveToggle, SignalList, Spinner],
   templateUrl: './job-detail-page.html',
   styleUrl: './job-detail-page.scss',
 })

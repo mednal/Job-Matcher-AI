@@ -1,0 +1,59 @@
+<section class="page saved-jobs">
+  <h1>Saved jobs</h1>
+  <p class="page__note">Jobs you have saved, most recently saved first.</p>
+
+  @if (error(); as message) {
+    <div class="ui-error" role="alert">
+      <p>{{ message }}</p>
+      <button class="ui-error__retry" type="button" (click)="retry()">Try again</button>
+    </div>
+  } @else if (loading() && total() === 0) {
+    <app-spinner label="Loading your saved jobs…" />
+  } @else if (entries().length === 0) {
+    <app-empty-state title="No saved jobs yet">
+      <p>Save a job from search to find it here.</p>
+    </app-empty-state>
+  } @else {
+    <p class="ui-tabular saved-jobs__count" aria-live="polite">
+      @if (total() === 1) {
+        1 job saved
+      } @else {
+        {{ total() }} jobs saved
+      }
+      @if (loading()) {
+        <span class="saved-jobs__updating">Updating…</span>
+      }
+    </p>
+
+    <ul class="saved-jobs__results">
+      @for (entry of entries(); track entry.jobId) {
+        <li>
+          @if (!entry.isActive) {
+            <p class="saved-jobs__note" role="status">
+              No source is listing this posting any more. It is shown as it was last seen.
+            </p>
+          } @else if (entry.redirectedToJobId !== null) {
+            <p class="saved-jobs__note" role="status">
+              This posting was merged into another listing — showing the current one.
+            </p>
+          }
+          <app-job-card
+            [job]="entry.job"
+            [positiveSignals]="entry.job.positiveSignals"
+            [negativeSignals]="entry.job.negativeSignals"
+          >
+            <app-save-toggle card-actions [jobId]="entry.jobId" />
+          </app-job-card>
+        </li>
+      }
+    </ul>
+
+    <app-pagination
+      [page]="page()"
+      [pageSize]="pageSize"
+      [total]="total()"
+      [busy]="loading()"
+      (pageChange)="goToPage($event)"
+    />
+  }
+</section>

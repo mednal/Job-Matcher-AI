@@ -1,5 +1,12 @@
 import { ParamMap, Params } from '@angular/router';
-import { EMPLOYMENT_TYPES, JUNIOR_LEVELS, WORKPLACE_TYPES } from '../../core/models/enums';
+import {
+  EMPLOYMENT_TYPES,
+  EmploymentType,
+  JUNIOR_LEVELS,
+  JuniorLevel,
+  WORKPLACE_TYPES,
+  WorkplaceType,
+} from '../../core/models/enums';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE, MAX_PAGE_SIZE } from '../../core/models/pagination';
 import {
   DEFAULT_SEARCH_SORT,
@@ -35,7 +42,7 @@ export function parseSearchQuery(params: ParamMap): SearchQuery {
     q: text(params.get('q'), MAX_SEARCH_QUERY_LENGTH),
     technologies: list(params.getAll('technologies'), MAX_TECHNOLOGY_LENGTH, lowercase),
     locations: list(params.getAll('locations'), MAX_LOCATION_LENGTH),
-    countryCode: countryCode(params.get('countryCode')),
+    countryCode: countryCodes(params.getAll('countryCode')),
     workplaceType: members(params.getAll('workplaceType'), WORKPLACE_TYPES),
     employmentType: members(params.getAll('employmentType'), EMPLOYMENT_TYPES),
     juniorLevel: members(params.getAll('juniorLevel'), JUNIOR_LEVELS),
@@ -89,28 +96,145 @@ export function toQueryParams(query: SearchQuery): Params {
 }
 
 /**
+ * One filter that is on, as a chip: what to call it, and the query without it.
+ *
+ * `without` is a whole `SearchQuery` rather than a key to delete, because
+ * removing one of three technologies has to leave the other two — a key is not
+ * fine-grained enough to say that. `page` is dropped by every removal: widening
+ * a search and staying on page seven answers with an empty page far more often
+ * than with what was just asked for, which is the rule `applyFilters` already
+ * follows.
+ */
+export interface ActiveFilter {
+  /** Stable across renders, so `@for` can track a chip through a removal. */
+  readonly key: string;
+  readonly label: string;
+  readonly without: SearchQuery;
+}
+
+/**
+ * Every filter currently on, in the order the panel presents them.
+ *
+ * This is the single description of what a filter *is*: the chips render it and
+ * `activeFilterCount` counts it, so the row of chips and the "N on" badge cannot
+ * disagree about whether something is on.
+ *
+ * `q` is not among them: it is the search, not a filter on it, and it has its
+ * own always-visible box. Neither are `sort`, `page` and `pageSize`, which change
+ * how one result set is presented rather than which jobs are in it.
+ */
+export function activeFilters(
+  query: SearchQuery,
+  label: FilterLabels = DEFAULT_LABELS,
+): ActiveFilter[] {
+  const filters: ActiveFilter[] = [];
+
+  const each = <T extends string>(
+    field:
+      | 'technologies'
+      | 'locations'
+      | 'countryCode'
+      | 'workplaceType'
+      | 'employmentType'
+      | 'juniorLevel',
+    values: readonly T[] | undefined,
+    text: (value: T) => string,
+  ): void => {
+    for (const value of values ?? []) {
+      const kept = (values ?? []).filter((other) => other !== value);
+      filters.push({
+        key: `${field}:${value}`,
+        label: text(value),
+        without: withField(query, field, kept.length > 0 ? kept : undefined),
+      });
+    }
+  };
+
+  const one = (
+    field: 'minJuniorScore' | 'maxYearsRequired' | 'postedWithinDays',
+    value: number | undefined,
+    text: string,
+  ): void => {
+    if (value !== undefined) {
+      filters.push({ key: field, label: text, without: withField(query, field, undefined) });
+    }
+  };
+
+  each('juniorLevel', query.juniorLevel, label.level);
+  each('workplaceType', query.workplaceType, label.workplace);
+  each('employmentType', query.employmentType, label.employment);
+  each('technologies', query.technologies, (value) => value);
+  each('locations', query.locations, (value) => value);
+  each('countryCode', query.countryCode, (value) => `Country ${value}`);
+  one('minJuniorScore', query.minJuniorScore, `Junior Match ${query.minJuniorScore}+`);
+  one(
+    'maxYearsRequired',
+    query.maxYearsRequired,
+    query.maxYearsRequired === 0
+      ? 'No experience asked for'
+      : `${query.maxYearsRequired} years or fewer`,
+  );
+  one('postedWithinDays', query.postedWithinDays, postedWithinLabel(query.postedWithinDays));
+
+  return filters;
+}
+
+/**
+ * How the enum members are worded on a chip. Injected rather than imported so
+ * this module stays free of component-layer imports — `shared/enum-labels` and
+ * the level labels live beside the components that own that vocabulary, and the
+ * search page passes them in.
+ */
+export interface FilterLabels {
+  level: (value: JuniorLevel) => string;
+  workplace: (value: WorkplaceType) => string;
+  employment: (value: EmploymentType) => string;
+}
+
+/** Wire values, so a caller that only wants the count needs no label source. */
+const DEFAULT_LABELS: FilterLabels = {
+  level: (value) => value,
+  workplace: (value) => value,
+  employment: (value) => value,
+};
+
+/**
  * How many filters are on — the count beside "Filters", and what tells the empty
  * state whether to suggest widening the search or starting one.
  *
- * `q` is not counted: it is the search, not a filter on it. Neither are `sort`,
- * `page` and `pageSize`, which change how one result set is presented rather than
- * which jobs are in it.
+ * Defined as the chips' own length so the two can never drift: a filter added to
+ * `activeFilters` is counted here without anyone remembering to add it twice.
  */
 export function activeFilterCount(query: SearchQuery): number {
-  const values = [
-    query.technologies,
-    query.locations,
-    query.countryCode,
-    query.workplaceType,
-    query.employmentType,
-    query.juniorLevel,
-    query.minJuniorScore,
-    query.maxYearsRequired,
-    query.postedWithinDays,
-  ];
+  return activeFilters(query).length;
+}
 
-  return values.filter((value) => (Array.isArray(value) ? value.length > 0 : value !== undefined))
-    .length;
+function postedWithinLabel(days: number | undefined): string {
+  if (days === 1) {
+    return 'Last 24 hours';
+  }
+  return `Last ${days} days`;
+}
+
+/**
+ * The query with one field replaced, and always back to page one.
+ *
+ * `undefined` removes the field rather than sending it empty — the same rule
+ * `toQueryParams` and `toSearchParams` apply, since `?technologies=` would read
+ * as a filter for nothing.
+ */
+function withField(
+  query: SearchQuery,
+  field: keyof SearchQuery,
+  value: string[] | string | number | undefined,
+): SearchQuery {
+  const next: SearchQuery = { ...query, page: undefined };
+  if (value === undefined) {
+    delete next[field];
+  } else {
+    Object.assign(next, { [field]: value });
+  }
+  return next;
 }
 
 function lowercase(value: string): string {
@@ -179,14 +303,30 @@ function members<T extends string>(
 }
 
 /**
- * Two letters or nothing. This is the one parameter that must **not** be truncated
- * to its cap: cutting an alpha-3 code down to two characters turns `AUT` into
- * Australia and `SVN` into El Salvador, so a wrong code is answered confidently
- * instead of being dropped.
+ * The entries that are two letters, uppercased. A list since M11.12.
+ *
+ * This is the one parameter that must **not** be truncated to its cap: cutting
+ * an alpha-3 code down to two characters turns `AUT` into Australia and `SVN`
+ * into El Salvador, so a wrong code is dropped rather than answered
+ * confidently. Comma-splitting is allowed here and nowhere among the free-text
+ * lists, because a country code cannot contain a comma.
  */
-function countryCode(value: string | null): string | undefined {
-  const code = value?.trim().toUpperCase() ?? '';
-  return /^[A-Z]{2}$/.test(code) ? code : undefined;
+function countryCodes(values: readonly string[]): string[] | undefined {
+  const kept: string[] = [];
+
+  for (const raw of values) {
+    for (const part of raw.split(',')) {
+      const code = part.trim().toUpperCase();
+      if (/^[A-Z]{2}$/.test(code) && !kept.includes(code)) {
+        kept.push(code);
+      }
+      if (kept.length === MAX_FILTER_VALUES) {
+        return kept;
+      }
+    }
+  }
+
+  return kept.length > 0 ? kept : undefined;
 }
 
 /**

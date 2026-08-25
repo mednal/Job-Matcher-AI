@@ -1,10 +1,12 @@
-<span class="score-badge__label">Junior Match</span>
+<span class="ui-label score-badge__label">Junior Match</span>
 
 <!-- `!== null`, not `@if (shownScore(); as …)`: a score of 0 is a real answer —
      `CLEARLY_EXPERIENCED` bottoms out there — and the aliasing form treats it as
      absent, which would silently drop the number on the worst-fitting jobs. -->
 @if (shownScore() !== null) {
-  <span class="score-badge__score">{{ shownScore() }}<span class="score-badge__unit">%</span></span>
+  <span class="ui-tabular score-badge__score"
+    >{{ shownScore() }}<span class="score-badge__unit">%</span></span
+  >
 }
 
 <span class="score-badge__band">{{ band() }}</span>
