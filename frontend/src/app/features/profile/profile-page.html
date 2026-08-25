@@ -105,14 +105,11 @@
           (valuesChange)="form.controls.locations.setValue($event)"
         />
 
-        <app-multi-value-field
+        <app-country-field
           label="Countries"
           fieldId="profile-country-codes"
-          placeholder="DE"
-          hint="Two letters each, as in DE or FR."
-          [maxLength]="2"
+          hint="Search by name and pick from the list."
           [maxValues]="maxListLength"
-          [normalize]="uppercase"
           [values]="form.controls.countryCodes.value"
           (valuesChange)="form.controls.countryCodes.setValue($event)"
         />

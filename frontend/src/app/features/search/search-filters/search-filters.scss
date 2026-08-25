@@ -187,6 +187,135 @@
   gap: var(--space-1);
 }
 
+/**
+ * "More filters" is its own disclosure, nested inside the already-collapsible
+ * panel — score, years and posted-within are the trio someone reaches for last,
+ * so folding them a second level down keeps the groups a first glance lands on
+ * to the ones most searches actually touch. Same chevron treatment as
+ * `.filters__summary`, one size down.
+ */
+.filters__more-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: calc(var(--space-1) * -1);
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  list-style: none;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.filters__more-summary::-webkit-details-marker {
+  display: none;
+}
+
+.filters__more-summary:hover {
+  background: var(--color-surface-muted);
+}
+
+.filters__more-summary::before {
+  content: '';
+  flex: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%235b6472' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 2.5 8 6l-3.5 3.5'/%3E%3C/svg%3E")
+    no-repeat center;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.filters__more[open] > .filters__more-summary::before {
+  transform: rotate(90deg);
+}
+
+.filters__more-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.filters__slider-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.filters__slider-value {
+  color: var(--color-brand-strong);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+/**
+ * The platform's own range input, restyled rather than wrapped in `appInput`:
+ * that class's border-and-padding box reads as a text field, and a slider is
+ * not one. A plain track and a brand-colored thumb say "drag me" the way a
+ * bordered rectangle around the whole control never would.
+ */
+.filters__slider {
+  width: 100%;
+  height: 1.25rem;
+  margin: var(--space-1) 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+}
+
+.filters__slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-border);
+}
+
+.filters__slider::-moz-range-track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-border);
+}
+
+.filters__slider::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--color-brand);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--duration-fast) var(--ease-out);
+  appearance: none;
+}
+
+.filters__slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--color-brand);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.filters__slider:hover::-webkit-slider-thumb {
+  transform: scale(1.1);
+}
+
+.filters__slider:hover::-moz-range-thumb {
+  transform: scale(1.1);
+}
+
+.filters__slider:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+.filters__slider:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
 .filters__label {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
@@ -197,6 +326,12 @@
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
   text-wrap: pretty;
+}
+
+.filters__error {
+  margin: 0;
+  color: var(--color-negative);
+  font-size: var(--font-size-xs);
 }
 
 .filters__actions {

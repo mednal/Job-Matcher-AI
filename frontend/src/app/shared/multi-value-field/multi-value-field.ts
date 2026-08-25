@@ -67,6 +67,18 @@ export class MultiValueField {
     this.draft.set('');
   }
 
+  /**
+   * Flushes whatever is typed but not yet added, as if Enter had been pressed.
+   * A value the user typed and never confirmed with Enter or Add is still a value
+   * they entered — the parent form calls this before reading the field's values,
+   * so submitting around this field cannot silently discard it.
+   */
+  commitDraft(): void {
+    if (this.draft().trim().length > 0) {
+      this.add();
+    }
+  }
+
   protected remove(value: string): void {
     this.valuesChange.emit(this.values().filter((kept) => kept !== value));
   }

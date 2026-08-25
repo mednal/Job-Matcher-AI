@@ -11,6 +11,7 @@ import {
   Profile,
   ProfileUpdate,
 } from '../../core/models/profile';
+import { CountryField } from '../../shared/country-field/country-field';
 import { workplaceTypeLabel } from '../../shared/enum-labels';
 import { MultiValueField } from '../../shared/multi-value-field/multi-value-field';
 import { Button } from '../../shared/ui/button';
@@ -46,7 +47,7 @@ interface ProfileFormValue {
  */
 @Component({
   selector: 'app-profile-page',
-  imports: [Button, InputField, MultiValueField, ReactiveFormsModule, Spinner],
+  imports: [Button, CountryField, InputField, MultiValueField, ReactiveFormsModule, Spinner],
   templateUrl: './profile-page.html',
   styleUrl: './profile-page.scss',
 })
@@ -61,7 +62,6 @@ export class ProfilePage {
 
   /** Technology slugs are lowercase by definition of the stored vocabulary. */
   protected readonly lowercase = (value: string): string => value.toLowerCase();
-  protected readonly uppercase = (value: string): string => value.toUpperCase();
 
   protected readonly form = new FormGroup({
     displayName: new FormControl('', { nonNullable: true }),

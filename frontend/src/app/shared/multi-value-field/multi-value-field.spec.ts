@@ -132,4 +132,42 @@ describe('MultiValueField', () => {
 
     expect(field.input().disabled).toBe(false);
   });
+
+  /**
+   * `commitDraft` is what a parent form calls before reading this field's values,
+   * so a value typed but never confirmed with Enter or Add is not discarded just
+   * because the surrounding form was submitted instead.
+   */
+  it('commitDraft adds whatever is typed, as if Enter had been pressed', () => {
+    const fixture = TestBed.createComponent(MultiValueField);
+    (fixture.componentRef as ComponentRef<MultiValueField>).setInput('label', 'Technologies');
+    fixture.componentRef.setInput('fieldId', 'technologies');
+    fixture.componentRef.setInput('values', []);
+    const emitted: string[][] = [];
+    fixture.componentInstance.valuesChange.subscribe((next) => emitted.push(next));
+    fixture.detectChanges();
+
+    const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;
+    input.value = 'java';
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    fixture.componentInstance.commitDraft();
+
+    expect(emitted).toEqual([['java']]);
+  });
+
+  it('commitDraft does nothing when the box is empty', () => {
+    const fixture = TestBed.createComponent(MultiValueField);
+    (fixture.componentRef as ComponentRef<MultiValueField>).setInput('label', 'Technologies');
+    fixture.componentRef.setInput('fieldId', 'technologies');
+    fixture.componentRef.setInput('values', []);
+    const emitted: string[][] = [];
+    fixture.componentInstance.valuesChange.subscribe((next) => emitted.push(next));
+    fixture.detectChanges();
+
+    fixture.componentInstance.commitDraft();
+
+    expect(emitted).toEqual([]);
+  });
 });

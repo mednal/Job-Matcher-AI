@@ -1,11 +1,19 @@
 <form class="filters" [formGroup]="form" (ngSubmit)="submit()" novalidate>
   <!--
-    M11.11 — What and Where, side by side and always visible.
-    `PRODUCT.md` §5's own example search leads with a role and a place, so the
-    place cannot live behind a collapsed panel. Where reuses `multi-value-field`
-    rather than becoming a single text box: `locations` is a list on the wire and
-    several of them widen the search, so a single box would have to either drop
-    the extra values or hide them.
+    M11.11 — What and Country, side by side and always visible.
+    `PRODUCT.md` §5's own example search leads with a role and a place, so a
+    way to narrow by place cannot live behind a collapsed panel.
+
+    This slot held free-text "Where" (M11.11) matched against a posting's
+    location string, then briefly a suggestions dropdown sourced from real
+    posting locations. Both were replaced by a plain country picker — the
+    same searchable, pick-only list as the profile's "Countries" field —
+    because a database with only a handful of seeded postings has only a
+    handful of locations to suggest, while the ISO country list is always
+    complete regardless of how much job data exists. `locations` stays on the
+    wire and in the URL: a profile that names one still seeds it, and a
+    shared link that carries one is still honored — there is simply no
+    control here to type one in by hand any more.
   -->
   <div class="filters__bar">
     <div class="filters__bar-field">
@@ -22,14 +30,12 @@
     </div>
 
     <div class="filters__bar-field">
-      <app-multi-value-field
-        label="Where"
-        fieldId="search-locations"
-        placeholder="Berlin, Germany"
-        hint="Matched against the location the posting states."
-        [maxLength]="maxLocationLength"
-        [values]="form.controls.locations.value"
-        (valuesChange)="form.controls.locations.setValue($event)"
+      <app-country-field
+        label="Country"
+        fieldId="search-country"
+        hint="Search by name and pick from the list. Several widen the search."
+        [values]="form.controls.countryCode.value"
+        (valuesChange)="form.controls.countryCode.setValue($event)"
       />
     </div>
 
@@ -104,64 +110,75 @@
         />
       </div>
 
-      <div class="filters__group">
-        <!-- Where moved to the bar (M11.11). A country code refines a location
-             rather than being one, so it stays here. -->
-        <app-multi-value-field
-          label="Countries"
-          fieldId="search-country"
-          placeholder="DE"
-          hint="Two letters each, as in DE or FR. Several widen the search."
-          [maxLength]="2"
-          [normalize]="uppercase"
-          [values]="form.controls.countryCode.value"
-          (valuesChange)="form.controls.countryCode.setValue($event)"
-        />
-      </div>
+      <details
+        class="filters__group filters__more"
+        [open]="moreFiltersOpen()"
+        (toggle)="onMoreFiltersToggle($event)"
+      >
+        <summary class="filters__legend filters__more-summary">More filters</summary>
 
-      <div class="filters__group">
-        <div class="filters__field">
-          <label class="filters__label" for="search-min-score">Minimum Junior Match</label>
-          <input
-            appInput
-            id="search-min-score"
-            type="number"
-            formControlName="minJuniorScore"
-            [attr.min]="0"
-            [attr.max]="100"
-            step="5"
-            placeholder="0"
-          />
-          <p class="filters__hint">
-            How suitable the posting is for an entry-level candidate, out of 100.
-          </p>
-        </div>
+        <div class="filters__more-body">
+          <div class="filters__field">
+            <div class="filters__slider-header">
+              <label class="filters__label" for="search-min-score">Minimum Junior Match</label>
+              <span class="filters__slider-value">
+                {{ form.controls.minJuniorScore.value > 0 ? form.controls.minJuniorScore.value : 'Any' }}
+              </span>
+            </div>
+            <input
+              class="filters__slider"
+              id="search-min-score"
+              type="range"
+              formControlName="minJuniorScore"
+              min="0"
+              max="100"
+              step="5"
+              aria-describedby="min-score-hint"
+            />
+            <p class="filters__hint" id="min-score-hint">
+              How suitable the posting is for an entry-level candidate, out of 100. Left at the low
+              end, no minimum applies.
+            </p>
+          </div>
 
-        <div class="filters__field">
-          <label class="filters__label" for="search-max-years">Most years asked for</label>
-          <input
-            appInput
-            id="search-max-years"
-            type="number"
-            formControlName="maxYearsRequired"
-            [attr.min]="0"
-            [attr.max]="maxYearsRequired"
-            step="1"
-            placeholder="Any"
-          />
-          <p class="filters__hint">Hides postings demanding more than this.</p>
-        </div>
-
-        <div class="filters__field">
-          <label class="filters__label" for="search-posted-within">Posted</label>
-          <select appInput id="search-posted-within" formControlName="postedWithinDays">
-            <option [ngValue]="null">Any time</option>
-            @for (choice of postedWithinChoices; track choice.days) {
-              <option [ngValue]="choice.days">{{ choice.label }}</option>
+          <div class="filters__field">
+            <label class="filters__label" for="search-max-years">Most years asked for</label>
+            <input
+              appInput
+              id="search-max-years"
+              type="number"
+              formControlName="maxYearsRequired"
+              [attr.min]="0"
+              [attr.max]="maxYearsRequired"
+              step="1"
+              placeholder="Any"
+              [attr.aria-invalid]="errorFor('maxYearsRequired', 'Most years asked for') ? 'true' : null"
+              [attr.aria-describedby]="
+                errorFor('maxYearsRequired', 'Most years asked for')
+                  ? 'max-years-error'
+                  : 'max-years-hint'
+              "
+            />
+            @if (errorFor('maxYearsRequired', 'Most years asked for'); as message) {
+              <p class="filters__error" id="max-years-error">{{ message }}</p>
+            } @else {
+              <p class="filters__hint" id="max-years-hint">
+                Hides postings demanding more than this.
+              </p>
             }
-          </select>
+          </div>
+
+          <div class="filters__field">
+            <label class="filters__label" for="search-posted-within">Posted</label>
+            <select appInput id="search-posted-within" formControlName="postedWithinDays">
+              <option [ngValue]="null">Any time</option>
+              @for (choice of postedWithinChoices; track choice.days) {
+                <option [ngValue]="choice.days">{{ choice.label }}</option>
+              }
+            </select>
+          </div>
         </div>
-      </div>
+      </details>
     </div>
 
     <div class="filters__actions">

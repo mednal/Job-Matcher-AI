@@ -60,11 +60,11 @@ function render() {
     element,
     text: () => element.textContent?.replace(/\s+/g, ' ').trim() ?? '',
     input: (id: string) => element.querySelector<HTMLInputElement>(`#${id}`)!,
-    /** Every chip in one multi-value field, by the field's input id. */
+    /** Every chip in one multi-value or country field, by the field's input id. */
     chipsOf: (id: string) => {
       const field = element
         .querySelector<HTMLInputElement>(`#${id}`)!
-        .closest('app-multi-value-field')!;
+        .closest('app-multi-value-field, app-country-field')!;
       return Array.from(field.querySelectorAll('app-chip'), (node) =>
         node.textContent?.replace(/\s+/g, ' ').replace('×', '').trim(),
       );
@@ -129,7 +129,7 @@ describe('ProfilePage', () => {
     expect(page.input('profile-display-name').value).toBe('Alex');
     expect(page.input('profile-years').value).toBe('1');
     expect(page.chipsOf('profile-technologies')).toEqual(['java']);
-    expect(page.chipsOf('profile-country-codes')).toEqual(['DE']);
+    expect(page.chipsOf('profile-country-codes')).toEqual(['Germany']);
     expect(page.element.querySelector<HTMLInputElement>('.profile__choice input')).toBeTruthy();
   });
 

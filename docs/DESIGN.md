@@ -235,7 +235,7 @@ The verdict palette. These three are not brand colours and must never be used as
 
 ### Named Rules
 
-**The One Verdict Rule.** Verdict Blue appears on the one action that moves the user forward, plus links, the focus ring, and the active nav item — and nowhere else. Never on headings, never on card borders, never on an icon for decoration, never to "add colour" to a flat area. Its rarity is what makes a primary button read as primary.
+**The One Verdict Rule.** Verdict Blue appears on the one action that moves the user forward, plus links, the focus ring, the active nav item, and the saved toggle's pressed state — and nowhere else. The saved toggle is not a new meaning for the accent: it reuses the same "this is the current one" sense the active nav item already carries, driven by `aria-pressed` rather than a class for the same reason invalid fields are driven by `aria-invalid`. Never on headings, never on card borders, never on an icon for decoration, never to "add colour" to a flat area. Its rarity is what makes a primary button read as primary.
 
 **The Word Beside the Colour Rule.** No state in this system is communicated by colour alone. The score badge shows the band name next to the number. The signal groups have "Positive" and "Concern" headings, not just green and amber. An invalid field is driven by `aria-invalid="true"`, not a class, so it can never look wrong to a sighted user while reading as fine to a screen reader. Audit test: render the screen in greyscale — if a meaning disappeared, it was never properly stated.
 

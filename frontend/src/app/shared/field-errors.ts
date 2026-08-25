@@ -36,6 +36,14 @@ export function fieldError(control: AbstractControl | null, label: string): stri
     const allowed = (errors['maxlength'] as { requiredLength: number }).requiredLength;
     return `${label} must be at most ${allowed} characters.`;
   }
+  if (errors['min']) {
+    const min = (errors['min'] as { min: number }).min;
+    return `${label} must be at least ${min}.`;
+  }
+  if (errors['max']) {
+    const max = (errors['max'] as { max: number }).max;
+    return `${label} must be at most ${max}.`;
+  }
 
   // A validator nobody wrote a message for. Saying something generic beats
   // showing a valid-looking field that refuses to submit.

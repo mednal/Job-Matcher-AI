@@ -10,7 +10,7 @@ import {
 } from '../../../core/models/auth';
 import { Button } from '../../../shared/ui/button';
 import { InputField } from '../../../shared/ui/input';
-import { fieldError } from '../field-errors';
+import { fieldError } from '../../../shared/field-errors';
 import { safeRedirectTarget } from '../redirect-target';
 
 @Component({
