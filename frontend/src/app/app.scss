@@ -11,9 +11,10 @@
   z-index: 10;
   padding: var(--space-2) var(--space-3);
   background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-md);
-  transition: top 0.15s ease;
+  transition: top var(--duration-fast) var(--ease-out);
 }
 
 .skip-link:focus-visible {
@@ -45,6 +46,8 @@
   gap: var(--space-2);
   color: var(--color-text);
   font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--tracking-title);
+  white-space: nowrap;
 }
 
 .brand:hover {
@@ -60,7 +63,12 @@
   background: var(--color-brand);
   color: #fff;
   font-size: var(--font-size-xs);
-  letter-spacing: 0.02em;
+  font-weight: var(--font-weight-semibold);
+  /* Two capitals in a small square need the tracking opened, and then the
+     trailing space removed again so the pair sits centred rather than pushed
+     left by its own letter-spacing. */
+  letter-spacing: var(--tracking-label);
+  text-indent: var(--tracking-label);
 }
 
 .app-nav {
@@ -74,6 +82,10 @@
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
 
 .app-nav__link:hover {
@@ -105,11 +117,13 @@
   color: var(--color-brand);
   font: inherit;
   font-size: var(--font-size-sm);
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .app-account__link:hover {
   text-decoration: underline;
+  text-underline-offset: 0.18em;
 }
 
 .app-account__email {
@@ -120,12 +134,20 @@
   white-space: nowrap;
 }
 
+/* A destination, so an anchor rather than the button primitive — but it carries
+   the primary button's metrics so the header's one action lines up with every
+   other primary action in the product. */
 .app-account__cta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   background: var(--color-brand);
   color: #fff;
   font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  transition: background-color var(--duration-fast) var(--ease-out);
 }
 
 .app-account__cta:hover {
@@ -142,12 +164,25 @@
   background: var(--color-surface);
 }
 
+/**
+ * The standing honesty constraint, and the last thing on every page.
+ *
+ * Capped at 70ch rather than run to the 72rem page measure: at full width this
+ * is a single ~110-character line, which is past the point where the eye
+ * reliably finds the start of the next one — and this is the one sentence in the
+ * product that must not be skimmed.
+ */
 .app-footer__note {
   max-width: var(--layout-max-width);
   margin: 0 auto;
-  padding: var(--space-4);
+  padding: var(--space-5) var(--space-4);
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
+}
+
+.app-footer__note > span {
+  display: block;
+  max-width: 70ch;
 }
 
 @media (max-width: 40rem) {

@@ -1,37 +1,58 @@
+/**
+ * The product's central claim, compressed into one object.
+ *
+ * `min-width` is the point of the fixed measure: these badges sit at the right
+ * edge of a column of result cards, and a user comparing three postings reads
+ * the numbers straight down. Sized to the widest band name ("Clearly
+ * experienced" wraps to two lines at this width, which is correct — the word is
+ * never dropped) so the column edge does not move from row to row.
+ */
 :host {
   display: inline-flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-1);
-  padding: var(--space-2) var(--space-3);
+  min-width: 8.5rem;
+  padding: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface-muted);
 }
 
 .score-badge__label {
+  /* `.ui-label` carries the type; only the tone is the badge's own, because in
+     a tinted band it has to sit inside the verdict colour rather than beside it. */
   color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
 }
 
+/**
+ * The number is the largest thing in the component and the only place in the
+ * application where type is set this tight: at 1.5rem semibold, default tracking
+ * leaves two digits looking loosely spelled out rather than read as one value.
+ * Tabular figures keep 8 and 94 and 100 on the same stem positions down a list.
+ */
 .score-badge__score {
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-semibold);
   line-height: var(--line-height-tight);
+  letter-spacing: var(--tracking-display);
 }
 
+/* The unit is not part of the value being compared, so it steps back a size and
+   a weight rather than competing with the digits. */
 .score-badge__unit {
-  margin-left: 1px;
+  margin-left: 0.05em;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
+  letter-spacing: normal;
+  opacity: 0.75;
 }
 
 .score-badge__band {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-tight);
+  text-wrap: balance;
 }
 
 /* Colour reinforces the band; it never replaces it. The word is always there, so
@@ -39,26 +60,28 @@
 :host(.score-badge--entry),
 :host(.score-badge--likely) {
   border-color: transparent;
-  background: #e6f4ec;
+  background: var(--color-positive-soft);
   color: var(--color-positive);
 }
 
 :host(.score-badge--unclear) {
   border-color: transparent;
-  background: #fdf3e3;
+  background: var(--color-caution-soft);
   color: var(--color-caution);
 }
 
 :host(.score-badge--experienced) {
   border-color: transparent;
-  background: #fdf2f1;
+  background: var(--color-negative-soft);
   color: var(--color-negative);
 }
 
+/* Inside a verdict ground the label takes the verdict's own colour, held back
+   just enough to sit under the number rather than beside it in weight. */
 :host(.score-badge--entry) .score-badge__label,
 :host(.score-badge--likely) .score-badge__label,
 :host(.score-badge--unclear) .score-badge__label,
 :host(.score-badge--experienced) .score-badge__label {
   color: inherit;
-  opacity: 0.85;
+  opacity: 0.8;
 }

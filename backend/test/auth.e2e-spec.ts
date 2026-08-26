@@ -4,6 +4,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { randomUUID } from 'crypto';
 import { AppModule } from '../src/app.module';
+import { withoutRequestId } from './error-envelope';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { AuthTokensResponse } from '../src/modules/auth/dto/auth-tokens.response';
 import { UserResponse } from '../src/modules/users/dto/user.response';
@@ -154,7 +155,11 @@ describe('Auth (e2e)', () => {
         .send({ email: uniqueEmail('ghost'), password: 'wrong-password' })
         .expect(401);
 
-      expect(wrongPassword.body).toEqual(unknownEmail.body);
+      // Without the per-request id: the two answers have to be identical in
+      // everything the caller can learn from them (M1.4 added the id).
+      expect(withoutRequestId(wrongPassword.body)).toEqual(
+        withoutRequestId(unknownEmail.body),
+      );
     });
 
     it('returns tokens on correct credentials', async () => {

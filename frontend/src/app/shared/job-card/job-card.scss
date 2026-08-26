@@ -1,27 +1,53 @@
+/**
+ * A posting as one scannable object.
+ *
+ * The border, not the shadow, is what separates it from the paper — hover moves
+ * the hairline one step darker rather than lifting the card, because a list
+ * being compared must not shift under the pointer.
+ */
+/**
+ * Two columns: everything the posting says on the left, the verdict on the
+ * right. The badge spans the card's rows rather than sitting in a header row of
+ * its own, so the facts start directly under the company line — as a row, its
+ * height became the card's and opened a hole the width of the card under the
+ * title.
+ *
+ * Row spacing stays on the children's own margins, so the grid sets no row-gap
+ * and the badge's generous row span costs nothing where the rows do not exist.
+ */
 :host {
-  display: block;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-5);
   padding: var(--space-5);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
   box-shadow: var(--shadow-sm);
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 
-.job-card__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-  flex-wrap: wrap;
+:host(:hover) {
+  border-color: var(--color-border-strong);
 }
 
-.job-card__identity {
-  flex: 1 1 18rem;
+:host > * {
+  grid-column: 1;
+  min-width: 0;
 }
 
+/**
+ * The title and the employer are the posting's own words, so they are set in the
+ * document serif. It is also what makes a result list readable at a glance: in a
+ * column of sans-serif interface chrome — labels, scores, chips, counts — the
+ * two facts the reader is actually searching for are the only serif on the card.
+ */
 .job-card__title {
   margin-bottom: var(--space-1);
+  font-family: var(--font-serif);
   font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: normal;
 }
 
 .job-card__title a {
@@ -36,7 +62,9 @@
 
 .job-card__employer {
   color: var(--color-text);
-  font-weight: var(--font-weight-medium);
+  font-family: var(--font-serif);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
 }
 
 .job-card__separator {
@@ -45,24 +73,78 @@
 
 .job-card__aside {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  grid-column: 2;
+  /* More rows than a card can grow; the grid sets no row-gap, so the surplus
+     costs nothing and the badge stays beside the content however many blocks
+     the posting turns out to have. */
+  grid-row: 1 / span 10;
+  align-self: start;
 }
 
+/**
+ * M11.10 — the contradiction, given the weight the claim deserves.
+ *
+ * `--color-negative` rather than `--color-caution`: this is not a hint that the
+ * posting might not suit, it is the posting's own stated minimum disagreeing
+ * with its own title, and it is the single most useful line on the card. The
+ * mark is a decorative glyph in a filled circle rather than an emoji, so it
+ * renders identically everywhere and is hidden from assistive technology — the
+ * sentence beside it already says the whole thing.
+ */
+.job-card__contradiction {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-negative-soft);
+  color: var(--color-negative);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  text-wrap: pretty;
+}
+
+.job-card__contradiction-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 50%;
+  background: var(--color-negative);
+  color: #fff;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+}
+
+/* Column gap wide enough that "Experience / 0–1 years" and the pair beside it
+   read as two facts rather than one run-on row. */
 .job-card__facts {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2) var(--space-5);
+  gap: var(--space-3) var(--space-6);
   margin: var(--space-4) 0 0;
   padding: 0;
   list-style: none;
   font-size: var(--font-size-sm);
 }
 
+.job-card__facts li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* `.ui-label` carries the type — the detail page states the same four facts and
+   the two were drifting apart. Only the block behaviour is local. */
 .job-card__fact-label {
   display: block;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-xs);
 }
 
 .job-card__technologies {
@@ -74,7 +156,19 @@
   list-style: none;
 }
 
+/**
+ * The evidence runs the full width of the card, under a rule that does the same.
+ * Held to the left column it stopped two thirds of the way across, which reads as
+ * an unfinished divider rather than a section break — and the two signal columns
+ * want the room.
+ *
+ * It shares rows with the badge's span, which is safe in one direction only: the
+ * badge is `align-self: start` and always shorter than the title, facts and chips
+ * stacked above this rule, so the two can never meet.
+ */
 .job-card__signals {
+  display: block;
+  grid-column: 1 / -1;
   margin-top: var(--space-4);
   padding-top: var(--space-4);
   border-top: 1px solid var(--color-border);
@@ -84,4 +178,20 @@
   margin: var(--space-3) 0 0;
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
+}
+
+/* One column below the same 40rem the header and the search bar already use.
+   The badge returns to the flow directly under the company line, which is where
+   the verdict has to be when the facts below it are a scroll away. */
+@media (max-width: 40rem) {
+  :host {
+    grid-template-columns: 1fr;
+  }
+
+  .job-card__aside {
+    grid-column: 1;
+    grid-row: auto;
+    align-items: flex-start;
+    margin-top: var(--space-4);
+  }
 }

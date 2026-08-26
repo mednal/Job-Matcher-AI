@@ -1,0 +1,140 @@
+<section class="page profile">
+  <h1>Profile</h1>
+  <p class="page__note">
+    What you are looking for. Saved here, it ranks your search results and fills in the filters a
+    new search starts with — it never hides jobs on its own.
+  </p>
+
+  @if (loadError()) {
+    <div class="ui-error profile__error" role="alert">
+      <p>Your profile could not be loaded.</p>
+      <!-- The shared retry control, not a secondary button: a white button inside
+           a Refuse panel was the one of these four screens that did not match. -->
+      <button class="ui-error__retry" type="button" (click)="retry()">Try again</button>
+    </div>
+  } @else if (loading()) {
+    <app-spinner label="Loading your profile…" />
+  } @else {
+    @if (neverSaved()) {
+      <p class="profile__hint">Nothing saved yet. Fill in what applies and leave the rest empty.</p>
+    }
+
+    @if (serverErrors().length > 0) {
+      <div class="ui-error profile__error" role="alert">
+        @if (serverErrors().length === 1) {
+          <p>{{ serverErrors()[0] }}</p>
+        } @else {
+          <ul>
+            @for (message of serverErrors(); track message) {
+              <li>{{ message }}</li>
+            }
+          </ul>
+        }
+      </div>
+    }
+
+    <form class="profile__form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+      <div class="profile__group">
+        <div class="profile__field">
+          <label class="profile__label" for="profile-display-name">Display name</label>
+          <input
+            appInput
+            id="profile-display-name"
+            type="text"
+            formControlName="displayName"
+            [attr.maxlength]="maxEntryLength"
+            autocomplete="name"
+          />
+          <p class="profile__field-hint">Optional. Only you see it.</p>
+        </div>
+
+        <div class="profile__field">
+          <label class="profile__label" for="profile-years">Years of experience</label>
+          <input
+            appInput
+            id="profile-years"
+            type="number"
+            formControlName="yearsOfExperience"
+            [attr.min]="0"
+            [attr.max]="maxYears"
+            step="1"
+            placeholder="0"
+          />
+          <p class="profile__field-hint">
+            Professional experience you already have. Leave it at 0 if you are starting out.
+          </p>
+        </div>
+      </div>
+
+      <div class="profile__group">
+        <app-multi-value-field
+          label="Roles you want"
+          fieldId="profile-desired-roles"
+          placeholder="Junior Java Developer"
+          hint="One at a time, in your own words."
+          [maxLength]="maxEntryLength"
+          [maxValues]="maxListLength"
+          [values]="form.controls.desiredRoles.value"
+          (valuesChange)="form.controls.desiredRoles.setValue($event)"
+        />
+      </div>
+
+      <div class="profile__group">
+        <app-multi-value-field
+          label="Technologies"
+          fieldId="profile-technologies"
+          placeholder="java"
+          hint="What you work with. These are what a result is ranked against."
+          [maxLength]="maxEntryLength"
+          [maxValues]="maxListLength"
+          [normalize]="lowercase"
+          [values]="form.controls.technologies.value"
+          (valuesChange)="form.controls.technologies.setValue($event)"
+        />
+      </div>
+
+      <div class="profile__group">
+        <app-multi-value-field
+          label="Locations"
+          fieldId="profile-locations"
+          placeholder="Berlin, Germany"
+          hint="Matched against the location a posting states."
+          [maxLength]="maxEntryLength"
+          [maxValues]="maxListLength"
+          [values]="form.controls.locations.value"
+          (valuesChange)="form.controls.locations.setValue($event)"
+        />
+
+        <app-country-field
+          label="Countries"
+          fieldId="profile-country-codes"
+          hint="Search by name and pick from the list."
+          [maxValues]="maxListLength"
+          [values]="form.controls.countryCodes.value"
+          (valuesChange)="form.controls.countryCodes.setValue($event)"
+        />
+      </div>
+
+      <fieldset class="profile__group profile__group--choices">
+        <legend class="profile__label">Workplace</legend>
+        @for (type of workplaceTypes; track type) {
+          <label class="profile__choice">
+            <input type="checkbox" [checked]="isOn(type)" (change)="toggle(type)" />
+            <span>{{ workplaceLabel(type) }}</span>
+          </label>
+        }
+      </fieldset>
+
+      <div class="profile__actions">
+        <button appButton type="submit" [disabled]="saving()">
+          {{ saving() ? 'Saving…' : 'Save profile' }}
+        </button>
+        <p class="profile__status" role="status" aria-live="polite">
+          @if (saved()) {
+            Profile saved.
+          }
+        </p>
+      </div>
+    </form>
+  }
+</section>

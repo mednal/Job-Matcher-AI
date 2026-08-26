@@ -1,6 +1,11 @@
 import type { JuniorLevel } from '@prisma/client';
 import type { Signal, SignalCode } from './signal';
 import { NUMERIC_SIGNAL_CODES } from './signals';
+import {
+  EXPERIENCED_FLOOR_YEARS,
+  JUNIOR_TITLE_PATTERN,
+  SENIOR_TITLE_PATTERN,
+} from '../../common/utils/junior-title';
 
 /**
  * The rules that turn evidence into a `JuniorLevel` (M8.3, `ARCHITECTURE.md` §6.4).
@@ -35,9 +40,6 @@ import { NUMERIC_SIGNAL_CODES } from './signals';
 
 /** A floor at or above this is the strongest negative evidence a posting can carry. */
 const CLEARLY_EXPERIENCED_FLOOR_YEARS = 5;
-
-/** `CLAUDE.md`'s negative list starts at "3+ years"; so does this. */
-const EXPERIENCED_FLOOR_YEARS = 3;
 
 /** The upper edge of the band this product is built for: roughly 0–2 years. */
 const JUNIOR_CEILING_YEARS = 2;
@@ -85,25 +87,6 @@ const ENTRY_LEVEL_NET_WEIGHT = 50;
 const LIKELY_ENTRY_LEVEL_NET_WEIGHT = 25;
 const EXPERIENCED_NET_WEIGHT = -25;
 const CLEARLY_EXPERIENCED_NET_WEIGHT = -60;
-
-/**
- * Title words that hint at who a posting is for. They are only ever a tie-break, so
- * the list can stay short: it names the words that are unambiguous in a job title
- * and leaves out everything that needs context.
- *
- * `intern` is bounded on both sides so it cannot match "internal" or
- * "international"; the German entries take a trailing tail so one entry covers
- * `Werkstudent`, `Werkstudentin` and `Berufseinsteiger:innen`.
- */
-const JUNIOR_TITLE_PATTERN =
-  /\b(junior|jr\.?|graduate|trainee|intern|internship|apprentice|entry[\s-]?level|einsteiger\w*|berufseinsteiger\w*|absolvent\w*|praktikant\w*|praktikum|werkstudent\w*|azubi\w*|auszubildende\w*)\b/i;
-
-/**
- * The other half. `lead` is a whole word only — "lead" in a title is a role, and
- * sentences, where it would more often be a verb, are not read here.
- */
-const SENIOR_TITLE_PATTERN =
-  /\b(senior|sr\.?|lead|leiter\w*|teamleiter\w*|teamlead\w*|principal|staff|head|chief|manager|architect|expert\w*|director|vp)\b/i;
 
 /** Everything the rules need: the figure, the evidence, and the title. */
 export interface LevelInput {

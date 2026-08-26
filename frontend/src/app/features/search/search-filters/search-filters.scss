@@ -18,14 +18,48 @@
   font-weight: var(--font-weight-medium);
 }
 
-.filters__bar-row {
+/**
+ * M11.11 — What, Where and Search on one line.
+ *
+ * Aligned to the top, not the bottom. Where reuses `multi-value-field`, so it
+ * grows a hint and a row of chips beneath its input; bottom-aligning the row
+ * pushed What down to match that growth and left the two field labels sitting at
+ * different heights, which is the pair a reader scans first.
+ *
+ * The submit is then offset by exactly one label block — derived from the tokens
+ * the label itself is set in, so it follows if those change — which puts it on
+ * the inputs' own line rather than on the tallest field's floor.
+ */
+.filters__bar {
   display: flex;
-  gap: var(--space-2);
+  align-items: start;
+  gap: var(--space-3);
 }
 
-.filters__bar-row input {
+.filters__bar-field {
   flex: 1;
   min-width: 0;
+}
+
+.filters__bar-field input {
+  width: 100%;
+}
+
+.filters__submit {
+  flex: none;
+  margin-top: calc(var(--font-size-sm) * var(--line-height-normal) + var(--space-1));
+}
+
+@media (max-width: 40rem) {
+  .filters__bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filters__submit {
+    width: 100%;
+    margin-top: 0;
+  }
 }
 
 .filters__panel {
@@ -34,13 +68,45 @@
   padding-top: var(--space-3);
 }
 
+/**
+ * The disclosure marker is drawn by the platform — a filled triangle in a
+ * palette this system does not own, and the last browser default visible on the
+ * page. Replaced with the same chevron the selects use, rotating on open.
+ */
 .filters__summary {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  margin: calc(var(--space-2) * -1) calc(var(--space-2) * -1);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
+  list-style: none;
   cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.filters__summary::-webkit-details-marker {
+  display: none;
+}
+
+.filters__summary:hover {
+  background: var(--color-surface-muted);
+}
+
+.filters__summary::before {
+  content: '';
+  flex: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%235b6472' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 2.5 8 6l-3.5 3.5'/%3E%3C/svg%3E")
+    no-repeat center;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.filters__panel[open] > .filters__summary::before {
+  transform: rotate(90deg);
 }
 
 .filters__count {
@@ -59,7 +125,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
   gap: var(--space-5);
-  margin-top: var(--space-4);
+  margin-top: var(--space-5);
 }
 
 .filters__group {
@@ -69,6 +135,7 @@
   margin: 0;
   padding: 0;
   border: 0;
+  min-width: 0;
 }
 
 .filters__legend {
@@ -81,13 +148,36 @@
   margin: 0;
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
+  text-wrap: pretty;
 }
 
+/**
+ * The row, not just the box, is the target. Padded out to a comfortable height
+ * and pulled back by the same amount, so the hit area grows without the column's
+ * rhythm changing — a checkbox alone is a ~13px target in a panel of eleven of
+ * them.
+ */
 .filters__choice {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  margin-inline: calc(var(--space-2) * -1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
   font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.filters__choice:hover {
+  background: var(--color-surface-muted);
+}
+
+.filters__choice input {
+  flex: none;
+  margin: 0;
+  width: 1rem;
+  height: 1rem;
   cursor: pointer;
 }
 
@@ -95,6 +185,135 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+}
+
+/**
+ * "More filters" is its own disclosure, nested inside the already-collapsible
+ * panel — score, years and posted-within are the trio someone reaches for last,
+ * so folding them a second level down keeps the groups a first glance lands on
+ * to the ones most searches actually touch. Same chevron treatment as
+ * `.filters__summary`, one size down.
+ */
+.filters__more-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: calc(var(--space-1) * -1);
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  list-style: none;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.filters__more-summary::-webkit-details-marker {
+  display: none;
+}
+
+.filters__more-summary:hover {
+  background: var(--color-surface-muted);
+}
+
+.filters__more-summary::before {
+  content: '';
+  flex: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%235b6472' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 2.5 8 6l-3.5 3.5'/%3E%3C/svg%3E")
+    no-repeat center;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.filters__more[open] > .filters__more-summary::before {
+  transform: rotate(90deg);
+}
+
+.filters__more-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.filters__slider-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.filters__slider-value {
+  color: var(--color-brand-strong);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+/**
+ * The platform's own range input, restyled rather than wrapped in `appInput`:
+ * that class's border-and-padding box reads as a text field, and a slider is
+ * not one. A plain track and a brand-colored thumb say "drag me" the way a
+ * bordered rectangle around the whole control never would.
+ */
+.filters__slider {
+  width: 100%;
+  height: 1.25rem;
+  margin: var(--space-1) 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+}
+
+.filters__slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-border);
+}
+
+.filters__slider::-moz-range-track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-border);
+}
+
+.filters__slider::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--color-brand);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--duration-fast) var(--ease-out);
+  appearance: none;
+}
+
+.filters__slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-surface);
+  border-radius: 50%;
+  background: var(--color-brand);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.filters__slider:hover::-webkit-slider-thumb {
+  transform: scale(1.1);
+}
+
+.filters__slider:hover::-moz-range-thumb {
+  transform: scale(1.1);
+}
+
+.filters__slider:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+.filters__slider:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
 }
 
 .filters__label {
@@ -106,10 +325,18 @@
   margin: 0;
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
+  text-wrap: pretty;
+}
+
+.filters__error {
+  margin: 0;
+  color: var(--color-negative);
+  font-size: var(--font-size-xs);
 }
 
 .filters__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
   margin-top: var(--space-5);
   padding-top: var(--space-4);

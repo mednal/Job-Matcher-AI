@@ -6,6 +6,15 @@
   background: var(--color-surface);
   color: var(--color-text);
   font: inherit;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+
+/* The field answers the pointer before it is committed to, which is most of what
+   makes a dense filter panel feel operable rather than printed. */
+:host(:hover:not(:disabled):not(:focus)) {
+  border-color: var(--color-border-strong);
 }
 
 :host(:focus-visible) {
@@ -21,4 +30,25 @@
 :host(:disabled) {
   background: var(--color-surface-muted);
   color: var(--color-text-muted);
+}
+
+/**
+ * The select's own arrow is drawn by the platform and belongs to no palette —
+ * it is the one control that would still look like an unstyled form beside
+ * fields this carefully toned. Replaced with a chevron in Ink Muted, matching
+ * the hairline weight used everywhere else.
+ *
+ * `padding-right` clears the glyph so a long option ("Posted in the last 7
+ * days") stops at the chevron rather than running under it.
+ */
+:host(select) {
+  padding-right: var(--space-7);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%235b6472' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-3) center;
+  appearance: none;
+}
+
+:host(select:disabled) {
+  opacity: 0.7;
 }

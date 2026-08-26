@@ -1,0 +1,42 @@
+:host {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
+}
+
+/**
+ * Saved is a state, and it was carrying it in the word alone: a saved job and an
+ * unsaved one rendered the identical grey secondary button, so a shortlist built
+ * across a twenty-result page could not be read off the page.
+ *
+ * Driven by `aria-pressed` rather than a class, for the same reason the fields
+ * are driven by `aria-invalid` — the visual state and the state a screen reader
+ * announces cannot then disagree. The tone is Verdict Blue Wash, which is what
+ * this system already uses for "this is the current one" on the active nav item;
+ * it is not a new meaning for the accent.
+ */
+.save-toggle__button[aria-pressed='true'] {
+  border-color: transparent;
+  background: var(--color-brand-soft);
+  color: var(--color-brand-strong);
+}
+
+.save-toggle__button[aria-pressed='true']:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--color-brand-soft);
+  color: var(--color-brand-strong);
+  /* The hover affordance on a saved job is the word changing to what clicking
+     would do, not the ground moving; keeping the tint still means the shortlist
+     stays legible while the pointer crosses it. */
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.save-toggle__error {
+  margin: 0;
+  max-width: 12rem;
+  color: var(--color-negative);
+  font-size: var(--font-size-xs);
+  text-align: right;
+}

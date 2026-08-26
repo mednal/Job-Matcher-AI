@@ -7,14 +7,41 @@
 
   <app-search-filters [query]="query()" [busy]="loading()" (apply)="applyFilters($event)" />
 
+  <!--
+    M11.11 — what is narrowing the results, and how to stop it narrowing them.
+    The chips describe the *URL*, which is the search; the panel above holds an
+    unsubmitted draft, so rendering them there would show filters that are not
+    actually on. Removing one navigates, exactly as every other control here does.
+  -->
+  @if (chips().length > 0) {
+    <div class="search__chips">
+      <span class="search__chips-label">Filtering by</span>
+      <ul class="search__chip-list">
+        @for (chip of chips(); track chip.key) {
+          <li>
+            <app-chip
+              tone="brand"
+              [removable]="true"
+              [removeLabel]="'Remove filter ' + chip.label"
+              (remove)="removeFilter(chip)"
+            >
+              {{ chip.label }}
+            </app-chip>
+          </li>
+        }
+      </ul>
+      <button appButton variant="ghost" type="button" (click)="clearFilters()">Clear all</button>
+    </div>
+  }
+
   @if (error(); as message) {
-    <div class="search__error" role="alert">
-      <p class="search__error-message">{{ message }}</p>
-      <button class="search__retry" type="button" (click)="retry()">Try again</button>
+    <div class="ui-error" role="alert">
+      <p>{{ message }}</p>
+      <button class="ui-error__retry" type="button" (click)="retry()">Try again</button>
     </div>
   } @else if (page(); as results) {
     <div class="search__toolbar">
-      <p class="search__count" aria-live="polite">
+      <p class="ui-tabular search__count" aria-live="polite">
         @if (results.total === 1) {
           1 job found
         } @else {
@@ -55,7 +82,18 @@
     } @else {
       <ul class="search__results">
         @for (job of results.items; track job.id) {
-          <li><app-job-card [job]="job" /></li>
+          <li>
+            <!-- M9.6/M11.10: the evidence travels with the result, so the card
+                 shows the number and the posting's own words rather than the
+                 level band alone. -->
+            <app-job-card
+              [job]="job"
+              [positiveSignals]="job.positiveSignals"
+              [negativeSignals]="job.negativeSignals"
+            >
+              <app-save-toggle card-actions [jobId]="job.id" />
+            </app-job-card>
+          </li>
         }
       </ul>
 

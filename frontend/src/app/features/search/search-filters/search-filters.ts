@@ -1,5 +1,5 @@
-import { Component, computed, effect, input, output, signal } from '@angular/core';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { Component, computed, effect, input, output, signal, viewChildren } from '@angular/core';
+import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import {
   EMPLOYMENT_TYPES,
   EmploymentType,
@@ -15,11 +15,13 @@ import {
   MAX_YEARS_REQUIRED,
   SearchQuery,
 } from '../../../core/models/search';
+import { CountryField } from '../../../shared/country-field/country-field';
 import { employmentTypeLabel, workplaceTypeLabel } from '../../../shared/enum-labels';
+import { fieldError } from '../../../shared/field-errors';
 import { levelLabel } from '../../../shared/junior-score-badge/level-labels';
+import { MultiValueField } from '../../../shared/multi-value-field/multi-value-field';
 import { Button } from '../../../shared/ui/button';
 import { InputField } from '../../../shared/ui/input';
-import { MultiValueField } from '../multi-value-field/multi-value-field';
 import { activeFilterCount } from '../search-query-params';
 
 /** The date filter's choices. Free-form days are legal on the wire, not useful here. */
@@ -35,11 +37,12 @@ interface FiltersValue {
   q: string;
   technologies: string[];
   locations: string[];
-  countryCode: string;
+  countryCode: string[];
   workplaceType: WorkplaceType[];
   employmentType: EmploymentType[];
   juniorLevel: JuniorLevel[];
-  minJuniorScore: number | null;
+  /** A slider, not a box: 0 is its rest position, not a typed "0". */
+  minJuniorScore: number;
   maxYearsRequired: number | null;
   postedWithinDays: number | null;
 }
@@ -63,7 +66,7 @@ interface FiltersValue {
  */
 @Component({
   selector: 'app-search-filters',
-  imports: [Button, InputField, MultiValueField, ReactiveFormsModule],
+  imports: [Button, CountryField, InputField, MultiValueField, ReactiveFormsModule],
   templateUrl: './search-filters.html',
   styleUrl: './search-filters.scss',
 })
@@ -94,15 +97,35 @@ export class SearchFilters {
   protected readonly form = new FormGroup({
     q: new FormControl('', { nonNullable: true }),
     technologies: new FormControl<string[]>([], { nonNullable: true }),
+    // No control in the template writes to this any more — "Where" was
+    // replaced by the country picker below. It exists purely to round-trip
+    // whatever `query` already carries, so a location a profile or a shared
+    // link set survives a submit of the *other* filters instead of being
+    // silently dropped by a form that forgot it owns this key too.
     locations: new FormControl<string[]>([], { nonNullable: true }),
-    countryCode: new FormControl('', { nonNullable: true }),
+    countryCode: new FormControl<string[]>([], { nonNullable: true }),
     workplaceType: new FormControl<WorkplaceType[]>([], { nonNullable: true }),
     employmentType: new FormControl<EmploymentType[]>([], { nonNullable: true }),
     juniorLevel: new FormControl<JuniorLevel[]>([], { nonNullable: true }),
-    minJuniorScore: new FormControl<number | null>(null),
-    maxYearsRequired: new FormControl<number | null>(null),
+    // A range input, unlike the number boxes below, cannot be driven outside its
+    // `min`/`max` attributes from the UI, so there is no matching pair of
+    // `Validators` to mirror `parseSearchQuery`'s bounds with here.
+    minJuniorScore: new FormControl(0, { nonNullable: true }),
+    // Mirrored from the bounds `parseSearchQuery` enforces on the way back out of
+    // the URL: without them, a value outside range submits clean and then
+    // vanishes silently the next time the query round-trips through the address
+    // bar, with nothing on screen to say why the filter it named is gone.
+    maxYearsRequired: new FormControl<number | null>(null, [
+      Validators.min(0),
+      Validators.max(MAX_YEARS_REQUIRED),
+    ]),
     postedWithinDays: new FormControl<number | null>(null),
   });
+
+  /** Every multi-value field the panel renders, so `submit` can flush their drafts. */
+  private readonly multiValueFields = viewChildren(MultiValueField);
+  /** The country field flushes the same way, but is not a `MultiValueField`. */
+  private readonly countryFields = viewChildren(CountryField);
 
   /** How many filters the *URL* carries — the count beside "Filters". */
   protected readonly activeCount = computed(() => activeFilterCount(this.query()));
@@ -116,13 +139,34 @@ export class SearchFilters {
   protected readonly panelOpen = signal(false);
   private openDecided = false;
 
+  /**
+   * The score/years/posted trio, folded under its own disclosure — a fourth
+   * checkbox-style group beside "Experience level" and "Workplace" read as one
+   * more thing to scan even for someone who wants none of them. Same
+   * decide-once-from-the-URL rule as the panel itself: closed by default, but
+   * open from the first render when a shared link already narrows by one of the
+   * three, so nothing the URL carries is left hidden behind a summary.
+   */
+  protected readonly moreFiltersOpen = signal(false);
+  private moreFiltersOpenDecided = false;
+
   constructor() {
     effect(() => {
-      this.form.setValue(toFormValue(this.query()), { emitEvent: false });
+      const query = this.query();
+      this.form.setValue(toFormValue(query), { emitEvent: false });
 
       if (!this.openDecided) {
         this.openDecided = true;
-        this.panelOpen.set(activeFilterCount(this.query()) > 0);
+        this.panelOpen.set(activeFilterCount(query) > 0);
+      }
+
+      if (!this.moreFiltersOpenDecided) {
+        this.moreFiltersOpenDecided = true;
+        this.moreFiltersOpen.set(
+          query.minJuniorScore !== undefined ||
+            query.maxYearsRequired !== undefined ||
+            query.postedWithinDays !== undefined,
+        );
       }
     });
   }
@@ -130,6 +174,10 @@ export class SearchFilters {
   /** `<details>` opens and closes itself; this keeps the signal from going stale. */
   protected onPanelToggle(event: Event): void {
     this.panelOpen.set((event.target as HTMLDetailsElement).open);
+  }
+
+  protected onMoreFiltersToggle(event: Event): void {
+    this.moreFiltersOpen.set((event.target as HTMLDetailsElement).open);
   }
 
   /**
@@ -148,10 +196,32 @@ export class SearchFilters {
     return control.value.includes(member);
   }
 
+  protected errorFor(field: 'maxYearsRequired', label: string): string | null {
+    return fieldError(this.form.get(field), label);
+  }
+
   protected submit(): void {
-    if (!this.busy()) {
-      this.apply.emit(toQuery(this.form.getRawValue()));
+    if (this.busy()) {
+      return;
     }
+
+    // A value typed into "Technologies" or "Country" and never confirmed with
+    // Enter or a click is still a value the user entered — Search and Apply
+    // filters are both ways of saying "use what's in this panel now", so
+    // neither should discard a draft the box is still showing.
+    for (const field of this.multiValueFields()) {
+      field.commitDraft();
+    }
+    for (const field of this.countryFields()) {
+      field.commitDraft();
+    }
+
+    if (this.form.invalid) {
+      this.form.markAllAsTouched();
+      return;
+    }
+
+    this.apply.emit(toQuery(this.form.getRawValue()));
   }
 
   /**
@@ -169,11 +239,11 @@ function toFormValue(query: SearchQuery): FiltersValue {
     q: query.q ?? '',
     technologies: [...(query.technologies ?? [])],
     locations: [...(query.locations ?? [])],
-    countryCode: query.countryCode ?? '',
+    countryCode: [...(query.countryCode ?? [])],
     workplaceType: [...(query.workplaceType ?? [])],
     employmentType: [...(query.employmentType ?? [])],
     juniorLevel: [...(query.juniorLevel ?? [])],
-    minJuniorScore: query.minJuniorScore ?? null,
+    minJuniorScore: query.minJuniorScore ?? 0,
     maxYearsRequired: query.maxYearsRequired ?? null,
     postedWithinDays: query.postedWithinDays ?? null,
   };
@@ -201,9 +271,8 @@ function toQuery(value: FiltersValue): SearchQuery {
   if (value.locations.length > 0) {
     query.locations = value.locations;
   }
-  const countryCode = value.countryCode.trim();
-  if (countryCode.length > 0) {
-    query.countryCode = countryCode.toUpperCase();
+  if (value.countryCode.length > 0) {
+    query.countryCode = value.countryCode;
   }
   if (value.workplaceType.length > 0) {
     query.workplaceType = value.workplaceType;
@@ -214,7 +283,9 @@ function toQuery(value: FiltersValue): SearchQuery {
   if (value.juniorLevel.length > 0) {
     query.juniorLevel = value.juniorLevel;
   }
-  if (value.minJuniorScore !== null) {
+  // 0 is the slider's rest position, not a chosen floor — score filters are
+  // never negative, so "at least 0" would filter out nothing anyway.
+  if (value.minJuniorScore > 0) {
     query.minJuniorScore = value.minJuniorScore;
   }
   if (value.maxYearsRequired !== null) {

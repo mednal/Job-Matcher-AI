@@ -1,6 +1,11 @@
 import { Params, convertToParamMap } from '@angular/router';
 import { SearchQuery } from '../../core/models/search';
-import { activeFilterCount, parseSearchQuery, toQueryParams } from './search-query-params';
+import {
+  activeFilterCount,
+  activeFilters,
+  parseSearchQuery,
+  toQueryParams,
+} from './search-query-params';
 
 function parse(params: Params): SearchQuery {
   return parseSearchQuery(convertToParamMap(params));
@@ -11,7 +16,7 @@ const FULL_QUERY: SearchQuery = {
   q: 'junior java developer',
   technologies: ['java', 'spring-boot'],
   locations: ['Berlin, Germany', 'Munich'],
-  countryCode: 'DE',
+  countryCode: ['DE'],
   workplaceType: ['REMOTE', 'HYBRID'],
   employmentType: ['FULL_TIME', 'INTERNSHIP'],
   juniorLevel: ['ENTRY_LEVEL', 'LIKELY_ENTRY_LEVEL'],
@@ -87,9 +92,29 @@ describe('parseSearchQuery', () => {
   });
 
   it('reads a country code as two uppercase letters', () => {
-    expect(parse({ countryCode: 'de' }).countryCode).toBe('DE');
+    expect(parse({ countryCode: 'de' }).countryCode).toEqual(['DE']);
     expect(parse({ countryCode: 'DEU' }).countryCode).toBeUndefined();
     expect(parse({ countryCode: '12' }).countryCode).toBeUndefined();
+  });
+
+  /**
+   * M11.12 — several codes, so a profile naming two countries seeds the filter
+   * instead of losing it. Comma-splitting is allowed here and nowhere among the
+   * free-text lists, because a country code cannot contain a comma.
+   */
+  it('reads several country codes, repeated or comma-separated', () => {
+    expect(parse({ countryCode: ['de', 'at'] }).countryCode).toEqual(['DE', 'AT']);
+    expect(parse({ countryCode: 'de,at' }).countryCode).toEqual(['DE', 'AT']);
+  });
+
+  // The parameter that must never be truncated to its cap: cutting `AUT` to two
+  // characters turns Austria into Australia.
+  it('drops a bad code and keeps the good ones around it', () => {
+    expect(parse({ countryCode: ['DE', 'AUT', 'FR'] }).countryCode).toEqual(['DE', 'FR']);
+  });
+
+  it('collapses duplicate codes', () => {
+    expect(parse({ countryCode: ['DE', 'de'] }).countryCode).toEqual(['DE']);
   });
 
   it.each([
@@ -168,5 +193,111 @@ describe('activeFilterCount', () => {
 
   it('does not count a filter that is present but empty', () => {
     expect(activeFilterCount({ technologies: [] })).toBe(0);
+  });
+});
+
+/**
+ * M11.11 — the chips. This is the one description of what a filter is, so the
+ * removal semantics are pinned per shape: one of many, the last of many, and a
+ * scalar.
+ */
+describe('activeFilters', () => {
+  const labels = {
+    level: (value: string) => `Level ${value}`,
+    workplace: (value: string) => `Place ${value}`,
+    employment: (value: string) => `Contract ${value}`,
+  };
+
+  it('names each value of a list separately', () => {
+    const chips = activeFilters({ technologies: ['java', 'kotlin'] });
+
+    expect(chips.map((chip) => chip.label)).toEqual(['java', 'kotlin']);
+    expect(chips.map((chip) => chip.key)).toEqual(['technologies:java', 'technologies:kotlin']);
+  });
+
+  // The reason `without` is a whole query and not a key to delete.
+  it('removing one of several leaves the others', () => {
+    const chips = activeFilters({ technologies: ['java', 'kotlin', 'go'] });
+    const withoutKotlin = chips[1].without;
+
+    expect(withoutKotlin.technologies).toEqual(['java', 'go']);
+  });
+
+  // An empty array would read as "a filter for nothing" everywhere downstream.
+  it('removing the last of a list drops the field entirely', () => {
+    const chips = activeFilters({ technologies: ['java'] });
+
+    expect(chips[0].without.technologies).toBeUndefined();
+    expect('technologies' in chips[0].without).toBe(false);
+  });
+
+  it('leaves every other filter and the search text alone', () => {
+    const query = {
+      q: 'java',
+      locations: ['Berlin'],
+      workplaceType: ['REMOTE' as const],
+      minJuniorScore: 60,
+      sort: 'postedAt' as const,
+    };
+    const remote = activeFilters(query).find((chip) => chip.key === 'workplaceType:REMOTE');
+
+    expect(remote?.without).toEqual({
+      q: 'java',
+      locations: ['Berlin'],
+      minJuniorScore: 60,
+      sort: 'postedAt',
+      page: undefined,
+    });
+  });
+
+  // Widening a search and staying on page seven answers with an empty page far
+  // more often than with what was just asked for.
+  it('returns to page one', () => {
+    const chips = activeFilters({ minJuniorScore: 60, page: 7 });
+
+    expect(chips[0].without.page).toBeUndefined();
+  });
+
+  it('words the enum members through the labels it is given', () => {
+    const chips = activeFilters(
+      { juniorLevel: ['ENTRY_LEVEL'], workplaceType: ['REMOTE'], employmentType: ['INTERNSHIP'] },
+      labels,
+    );
+
+    expect(chips.map((chip) => chip.label)).toEqual([
+      'Level ENTRY_LEVEL',
+      'Place REMOTE',
+      'Contract INTERNSHIP',
+    ]);
+  });
+
+  it('words the scalar filters as what they do', () => {
+    expect(activeFilters({ countryCode: ['DE'] })[0].label).toBe('Country DE');
+    expect(activeFilters({ minJuniorScore: 60 })[0].label).toBe('Junior Match 60+');
+    expect(activeFilters({ maxYearsRequired: 2 })[0].label).toBe('2 years or fewer');
+    expect(activeFilters({ postedWithinDays: 1 })[0].label).toBe('Last 24 hours');
+    expect(activeFilters({ postedWithinDays: 7 })[0].label).toBe('Last 7 days');
+  });
+
+  // `0` is a filter, not an absence — and "0 years or fewer" is not English.
+  it('words a zero-years filter as the statement it is', () => {
+    expect(activeFilters({ maxYearsRequired: 0 })[0].label).toBe('No experience asked for');
+  });
+
+  it('never describes the search text or the presentation as a filter', () => {
+    expect(activeFilters({ q: 'java', sort: 'postedAt', page: 2, pageSize: 50 })).toEqual([]);
+  });
+
+  // The count is defined as these chips' length, so this is the guard against
+  // the badge and the row ever disagreeing.
+  it('agrees with activeFilterCount', () => {
+    const query = {
+      technologies: ['java', 'kotlin'],
+      workplaceType: ['REMOTE' as const],
+      minJuniorScore: 60,
+    };
+
+    expect(activeFilters(query)).toHaveLength(activeFilterCount(query));
+    expect(activeFilterCount(query)).toBe(4);
   });
 });

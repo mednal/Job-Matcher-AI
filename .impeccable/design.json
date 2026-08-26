@@ -1,0 +1,465 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-25T00:00:00.000Z",
+  "title": "Design System: JuniorJob AI",
+  "extensions": {
+    "colorMeta": {
+      "verdict-blue": {
+        "role": "primary",
+        "displayName": "Verdict Blue",
+        "canonical": "#1d4ed8",
+        "tonalRamp": [
+          "oklch(18% 0.10 264)",
+          "oklch(28% 0.16 264)",
+          "oklch(38% 0.20 264)",
+          "oklch(48% 0.22 264)",
+          "oklch(59% 0.18 264)",
+          "oklch(71% 0.13 264)",
+          "oklch(83% 0.07 264)",
+          "oklch(94% 0.03 264)"
+        ]
+      },
+      "verdict-blue-deep": {
+        "role": "primary",
+        "displayName": "Verdict Blue Deep",
+        "canonical": "#1a3fae",
+        "tonalRamp": [
+          "oklch(16% 0.09 266)",
+          "oklch(25% 0.14 266)",
+          "oklch(34% 0.18 266)",
+          "oklch(43% 0.19 266)",
+          "oklch(56% 0.16 266)",
+          "oklch(69% 0.11 266)",
+          "oklch(82% 0.06 266)",
+          "oklch(94% 0.02 266)"
+        ]
+      },
+      "verdict-blue-wash": {
+        "role": "primary",
+        "displayName": "Verdict Blue Wash",
+        "canonical": "#e9efff",
+        "tonalRamp": [
+          "oklch(20% 0.04 266)",
+          "oklch(32% 0.05 266)",
+          "oklch(44% 0.05 266)",
+          "oklch(56% 0.05 266)",
+          "oklch(68% 0.04 266)",
+          "oklch(80% 0.03 266)",
+          "oklch(89% 0.03 266)",
+          "oklch(96% 0.02 266)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "#f5f6f8",
+        "tonalRamp": [
+          "oklch(18% 0.004 255)",
+          "oklch(30% 0.004 255)",
+          "oklch(42% 0.005 255)",
+          "oklch(54% 0.005 255)",
+          "oklch(67% 0.005 255)",
+          "oklch(80% 0.004 255)",
+          "oklch(90% 0.004 255)",
+          "oklch(97% 0.003 255)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "oklch(15% 0 0)",
+          "oklch(28% 0 0)",
+          "oklch(41% 0 0)",
+          "oklch(54% 0 0)",
+          "oklch(67% 0 0)",
+          "oklch(80% 0 0)",
+          "oklch(90% 0 0)",
+          "oklch(100% 0 0)"
+        ]
+      },
+      "surface-sunk": {
+        "role": "neutral",
+        "displayName": "Surface Sunk",
+        "canonical": "#eef0f4",
+        "tonalRamp": [
+          "oklch(18% 0.006 255)",
+          "oklch(30% 0.007 255)",
+          "oklch(42% 0.008 255)",
+          "oklch(54% 0.008 255)",
+          "oklch(67% 0.007 255)",
+          "oklch(80% 0.006 255)",
+          "oklch(90% 0.006 255)",
+          "oklch(95% 0.005 255)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#dde1e7",
+        "tonalRamp": [
+          "oklch(18% 0.008 255)",
+          "oklch(30% 0.010 255)",
+          "oklch(42% 0.011 255)",
+          "oklch(54% 0.011 255)",
+          "oklch(67% 0.010 255)",
+          "oklch(80% 0.009 255)",
+          "oklch(89% 0.008 255)",
+          "oklch(96% 0.005 255)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#15181d",
+        "tonalRamp": [
+          "oklch(15% 0.008 250)",
+          "oklch(22% 0.008 250)",
+          "oklch(34% 0.010 250)",
+          "oklch(46% 0.011 250)",
+          "oklch(58% 0.010 250)",
+          "oklch(71% 0.009 250)",
+          "oklch(84% 0.007 250)",
+          "oklch(95% 0.004 250)"
+        ]
+      },
+      "ink-muted": {
+        "role": "neutral",
+        "displayName": "Ink Muted",
+        "canonical": "#5b6472",
+        "tonalRamp": [
+          "oklch(16% 0.014 255)",
+          "oklch(27% 0.018 255)",
+          "oklch(37% 0.020 255)",
+          "oklch(48% 0.020 255)",
+          "oklch(60% 0.018 255)",
+          "oklch(73% 0.014 255)",
+          "oklch(85% 0.009 255)",
+          "oklch(95% 0.005 255)"
+        ]
+      },
+      "affirm": {
+        "role": "secondary",
+        "displayName": "Affirm",
+        "canonical": "#146c43",
+        "tonalRamp": [
+          "oklch(17% 0.045 156)",
+          "oklch(27% 0.075 156)",
+          "oklch(37% 0.095 156)",
+          "oklch(46% 0.110 156)",
+          "oklch(58% 0.100 156)",
+          "oklch(71% 0.075 156)",
+          "oklch(84% 0.045 156)",
+          "oklch(95% 0.020 156)"
+        ]
+      },
+      "affirm-wash": {
+        "role": "secondary",
+        "displayName": "Affirm Wash",
+        "canonical": "#e6f4ec",
+        "tonalRamp": [
+          "oklch(20% 0.020 156)",
+          "oklch(32% 0.026 156)",
+          "oklch(44% 0.030 156)",
+          "oklch(56% 0.030 156)",
+          "oklch(68% 0.026 156)",
+          "oklch(80% 0.020 156)",
+          "oklch(89% 0.016 156)",
+          "oklch(96% 0.012 156)"
+        ]
+      },
+      "caution": {
+        "role": "secondary",
+        "displayName": "Caution",
+        "canonical": "#9a5b00",
+        "tonalRamp": [
+          "oklch(18% 0.045 70)",
+          "oklch(28% 0.075 70)",
+          "oklch(39% 0.095 70)",
+          "oklch(50% 0.110 70)",
+          "oklch(62% 0.105 70)",
+          "oklch(74% 0.085 70)",
+          "oklch(86% 0.050 70)",
+          "oklch(95% 0.022 70)"
+        ]
+      },
+      "caution-wash": {
+        "role": "secondary",
+        "displayName": "Caution Wash",
+        "canonical": "#fdf3e3",
+        "tonalRamp": [
+          "oklch(21% 0.020 70)",
+          "oklch(33% 0.028 70)",
+          "oklch(45% 0.032 70)",
+          "oklch(57% 0.032 70)",
+          "oklch(69% 0.028 70)",
+          "oklch(81% 0.022 70)",
+          "oklch(90% 0.018 70)",
+          "oklch(97% 0.014 70)"
+        ]
+      },
+      "refuse": {
+        "role": "secondary",
+        "displayName": "Refuse",
+        "canonical": "#b42318",
+        "tonalRamp": [
+          "oklch(18% 0.075 27)",
+          "oklch(28% 0.125 27)",
+          "oklch(39% 0.165 27)",
+          "oklch(50% 0.190 27)",
+          "oklch(62% 0.165 27)",
+          "oklch(74% 0.120 27)",
+          "oklch(86% 0.070 27)",
+          "oklch(95% 0.028 27)"
+        ]
+      },
+      "refuse-wash": {
+        "role": "secondary",
+        "displayName": "Refuse Wash",
+        "canonical": "#fdf2f1",
+        "tonalRamp": [
+          "oklch(21% 0.022 27)",
+          "oklch(33% 0.030 27)",
+          "oklch(45% 0.034 27)",
+          "oklch(57% 0.034 27)",
+          "oklch(69% 0.030 27)",
+          "oklch(81% 0.024 27)",
+          "oklch(90% 0.018 27)",
+          "oklch(97% 0.012 27)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Page titles only — one per screen."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section headings within a page."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Job card titles, detail-page section headings, empty-state titles. The most-used heading in the product."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Descriptions and prose. Capped at 70ch on the detail page, 60ch for standalone notes."
+      },
+      "body-small": {
+        "displayName": "Body Small",
+        "purpose": "Secondary text — company lines, hints, counts, form labels, nav links. Numerically the most common size in the interface."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase micro-labels naming the fact directly beneath them: EXPERIENCE, LOCATION, JUNIOR MATCH, POSITIVE, CONCERN."
+      }
+    },
+    "shadows": [
+      {
+        "name": "seat",
+        "value": "0 1px 2px rgb(16 24 40 / 6%)",
+        "purpose": "Seats a card on the paper without lifting it. Cards, filter panel, profile form, auth card."
+      },
+      {
+        "name": "float",
+        "value": "0 4px 12px rgb(16 24 40 / 8%)",
+        "purpose": "Elements that genuinely overlay page content. Currently only the skip link; a future popover or dialog would use this and nothing heavier."
+      }
+    ],
+    "motion": [
+      {
+        "name": "spinner-turn",
+        "value": "0.7s linear infinite",
+        "purpose": "The only looping animation in the system. Disabled entirely under prefers-reduced-motion: reduce; the label carries the message alone."
+      },
+      {
+        "name": "skip-link-reveal",
+        "value": "top 0.15s ease",
+        "purpose": "The skip link sliding into view on focus. The only transition in the application."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact",
+        "value": "40rem"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one action per screen that moves the user forward. Disabled means in flight, not refused.",
+      "html": "<button class=\"ds-btn ds-btn-primary\" type=\"button\">Search jobs</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2, 0.5rem); padding: var(--space-2, 0.5rem) var(--space-4, 1rem); border: 1px solid transparent; border-radius: var(--radius-sm, 4px); font: inherit; font-weight: var(--font-weight-medium, 500); line-height: var(--line-height-tight, 1.25); cursor: pointer; } .ds-btn-primary { background: var(--color-brand, #1d4ed8); color: #fff; } .ds-btn-primary:hover:not(:disabled) { background: var(--color-brand-strong, #1a3fae); } .ds-btn-primary:focus-visible { outline: 2px solid var(--color-brand, #1d4ed8); outline-offset: 2px; } .ds-btn-primary:disabled { opacity: 0.6; cursor: progress; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "The default for anything that is not the screen's main action. Hover shifts tone; it never lifts.",
+      "html": "<button class=\"ds-btn2 ds-btn-secondary\" type=\"button\">Clear filters</button>",
+      "css": ".ds-btn2 { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2, 0.5rem); padding: var(--space-2, 0.5rem) var(--space-4, 1rem); border: 1px solid transparent; border-radius: var(--radius-sm, 4px); font: inherit; font-weight: var(--font-weight-medium, 500); line-height: var(--line-height-tight, 1.25); cursor: pointer; } .ds-btn-secondary { border-color: var(--color-border, #dde1e7); background: var(--color-surface, #fff); color: var(--color-text, #15181d); } .ds-btn-secondary:hover:not(:disabled) { background: var(--color-surface-muted, #eef0f4); } .ds-btn-secondary:focus-visible { outline: 2px solid var(--color-brand, #1d4ed8); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Focus shifts the border to the accent and paints the global focus outline. Invalid is driven by aria-invalid, never a class.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">What</span><input class=\"ds-input\" type=\"text\" placeholder=\"Java developer\" /><span class=\"ds-field-hint\">Title, technology or keyword</span></label>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: var(--space-1, 0.25rem); } .ds-field-label { font-size: var(--font-size-sm, 0.875rem); font-weight: var(--font-weight-medium, 500); color: var(--color-text, #15181d); } .ds-field-hint { font-size: var(--font-size-xs, 0.75rem); color: var(--color-text-muted, #5b6472); } .ds-input { width: 100%; padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem); border: 1px solid var(--color-border, #dde1e7); border-radius: var(--radius-sm, 4px); background: var(--color-surface, #fff); color: var(--color-text, #15181d); font: inherit; } .ds-input:focus-visible { border-color: var(--color-brand, #1d4ed8); outline: 2px solid var(--color-brand, #1d4ed8); outline-offset: 2px; } .ds-input[aria-invalid='true'] { border-color: var(--color-negative, #b42318); } .ds-input:disabled { background: var(--color-surface-muted, #eef0f4); color: var(--color-text-muted, #5b6472); }"
+    },
+    {
+      "name": "Removable Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "One discrete value the user can drop. The remove control sits inside the pill so the chip stays a single object, with a hit area larger than its glyph.",
+      "html": "<span class=\"ds-chip ds-chip-removable\">Remote<button class=\"ds-chip-remove\" type=\"button\" aria-label=\"Remove Remote filter\">×</button></span>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; padding: var(--space-1, 0.25rem) var(--space-3, 0.75rem); border: 1px solid var(--color-border, #dde1e7); border-radius: var(--radius-full, 999px); background: var(--color-surface-muted, #eef0f4); color: var(--color-text-muted, #5b6472); font-size: var(--font-size-xs, 0.75rem); line-height: var(--line-height-tight, 1.25); white-space: nowrap; } .ds-chip-removable { gap: var(--space-1, 0.25rem); padding-right: var(--space-1, 0.25rem); } .ds-chip-remove { display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; padding: 0; border: 0; border-radius: var(--radius-full, 999px); background: transparent; color: currentColor; font-size: var(--font-size-md, 1rem); line-height: 1; cursor: pointer; } .ds-chip-remove:hover, .ds-chip-remove:focus-visible { background: rgb(0 0 0 / 8%); }"
+    },
+    {
+      "name": "Junior Score Badge",
+      "kind": "custom",
+      "refersTo": "score-badge-entry",
+      "description": "Signature component. The band word is always rendered beside the number, so the verdict survives greyscale and never reads as a hiring probability.",
+      "html": "<span class=\"ds-score ds-score-entry\"><span class=\"ds-score-label\">Junior Match</span><span class=\"ds-score-value\">94<span class=\"ds-score-unit\">%</span></span><span class=\"ds-score-band\">Entry level</span></span>",
+      "css": ".ds-score { display: inline-flex; flex-direction: column; align-items: flex-start; gap: var(--space-1, 0.25rem); padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem); border: 1px solid var(--color-border, #dde1e7); border-radius: var(--radius-md, 8px); background: var(--color-surface-muted, #eef0f4); } .ds-score-label { font-size: var(--font-size-xs, 0.75rem); font-weight: var(--font-weight-medium, 500); letter-spacing: 0.02em; text-transform: uppercase; color: var(--color-text-muted, #5b6472); } .ds-score-value { font-size: var(--font-size-xl, 1.5rem); font-weight: var(--font-weight-semibold, 600); line-height: var(--line-height-tight, 1.25); } .ds-score-unit { margin-left: 1px; font-size: var(--font-size-sm, 0.875rem); font-weight: var(--font-weight-medium, 500); } .ds-score-band { font-size: var(--font-size-sm, 0.875rem); font-weight: var(--font-weight-medium, 500); } .ds-score-entry { border-color: transparent; background: #e6f4ec; color: var(--color-positive, #146c43); } .ds-score-entry .ds-score-label { color: inherit; opacity: 0.85; }"
+    },
+    {
+      "name": "Contradiction Banner",
+      "kind": "custom",
+      "refersTo": "contradiction-banner",
+      "description": "Signature component. The posting's own stated minimum disagreeing with its own title — stated in Refuse, not Caution, because it is what the user came for.",
+      "html": "<p class=\"ds-contradiction\"><span class=\"ds-contradiction-mark\" aria-hidden=\"true\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" fill=\"currentColor\"><path d=\"M4.1 1h1.8l-.2 4.4H4.3L4.1 1Zm.9 5.6a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z\"/></svg></span>Titled Junior, but the description asks for 5+ years.</p>",
+      "css": ".ds-contradiction { display: flex; align-items: center; gap: var(--space-2, 0.5rem); margin: 0; padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem); border-radius: var(--radius-sm, 4px); background: var(--color-negative-soft, #fdf2f1); color: var(--color-negative, #b42318); font-size: var(--font-size-sm, 0.875rem); font-weight: 600; } .ds-contradiction-mark { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 1.125rem; height: 1.125rem; border-radius: 50%; background: var(--color-negative, #b42318); color: #fff; line-height: 1; }"
+    },
+    {
+      "name": "Signal List",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Signature component. The Case File made literal: a claim, and beneath it the verbatim sentence from the posting that produced it.",
+      "html": "<div class=\"ds-signals\"><div><h4 class=\"ds-signals-heading ds-signals-heading--positive\">Positive</h4><ul class=\"ds-signals-items\"><li><span class=\"ds-signals-label\">Recent graduates welcome</span><p class=\"ds-signals-evidence\">we welcome recent graduates and career changers</p></li></ul></div><div><h4 class=\"ds-signals-heading ds-signals-heading--negative\">Concern</h4><ul class=\"ds-signals-items\"><li><span class=\"ds-signals-label\">German B2 required</span><p class=\"ds-signals-evidence\">Deutschkenntnisse auf B2-Niveau erforderlich</p></li></ul></div></div>",
+      "css": ".ds-signals { display: grid; gap: var(--space-4, 1rem); grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); } .ds-signals-heading { margin: 0 0 var(--space-2, 0.5rem); font-size: var(--font-size-xs, 0.75rem); font-weight: var(--font-weight-semibold, 600); letter-spacing: 0.02em; text-transform: uppercase; } .ds-signals-heading--positive { color: var(--color-positive, #146c43); } .ds-signals-heading--negative { color: var(--color-caution, #9a5b00); } .ds-signals-items { display: flex; flex-direction: column; gap: var(--space-3, 0.75rem); margin: 0; padding: 0; list-style: none; } .ds-signals-label { display: block; font-size: var(--font-size-sm, 0.875rem); font-weight: var(--font-weight-medium, 500); } .ds-signals-evidence { margin: var(--space-1, 0.25rem) 0 0; padding-left: var(--space-3, 0.75rem); border-left: 2px solid var(--color-border, #dde1e7); color: var(--color-text-muted, #5b6472); font-size: var(--font-size-xs, 0.75rem); font-style: italic; } .ds-signals-evidence::before { content: '“'; } .ds-signals-evidence::after { content: '”'; }"
+    },
+    {
+      "name": "Job Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "The unit of triage. Hairline border and Seat shadow on Paper; internal sections divided by a hairline rule rather than by spacing alone.",
+      "html": "<article class=\"ds-card\"><div class=\"ds-card-head\"><div><h3 class=\"ds-card-title\">Junior Java Developer</h3><p class=\"ds-card-company\"><span class=\"ds-card-employer\">Example Company</span><span class=\"ds-card-sep\">·</span>Berlin, Germany</p></div></div><ul class=\"ds-card-facts\"><li><span class=\"ds-card-fact-label\">Experience</span>0–1 years</li><li><span class=\"ds-card-fact-label\">Workplace</span>Hybrid</li></ul></article>",
+      "css": ".ds-card { display: block; padding: var(--space-5, 1.5rem); border: 1px solid var(--color-border, #dde1e7); border-radius: var(--radius-md, 8px); background: var(--color-surface, #fff); box-shadow: var(--shadow-sm, 0 1px 2px rgb(16 24 40 / 6%)); } .ds-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4, 1rem); flex-wrap: wrap; } .ds-card-title { margin: 0 0 var(--space-1, 0.25rem); font-size: var(--font-size-lg, 1.125rem); font-weight: var(--font-weight-semibold, 600); line-height: var(--line-height-tight, 1.25); } .ds-card-company { margin: 0; color: var(--color-text-muted, #5b6472); font-size: var(--font-size-sm, 0.875rem); } .ds-card-employer { color: var(--color-text, #15181d); font-weight: var(--font-weight-medium, 500); } .ds-card-sep { margin: 0 var(--space-2, 0.5rem); } .ds-card-facts { display: flex; flex-wrap: wrap; gap: var(--space-2, 0.5rem) var(--space-5, 1.5rem); margin: var(--space-4, 1rem) 0 0; padding: 0; list-style: none; font-size: var(--font-size-sm, 0.875rem); } .ds-card-fact-label { display: block; color: var(--color-text-muted, #5b6472); font-size: var(--font-size-xs, 0.75rem); text-transform: uppercase; letter-spacing: 0.02em; }"
+    },
+    {
+      "name": "Navigation Link",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "Muted at rest, tonal on hover, accent-washed when active. The only persistent use of the accent in the header.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Primary\"><a class=\"ds-nav-link ds-nav-link--active\" href=\"#\">Search</a><a class=\"ds-nav-link\" href=\"#\">Saved</a><a class=\"ds-nav-link\" href=\"#\">Profile</a></nav>",
+      "css": ".ds-nav { display: flex; gap: var(--space-1, 0.25rem); } .ds-nav-link { padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem); border-radius: var(--radius-sm, 4px); color: var(--color-text-muted, #5b6472); font-size: var(--font-size-sm, 0.875rem); font-weight: var(--font-weight-medium, 500); text-decoration: none; } .ds-nav-link:hover { background: var(--color-surface-muted, #eef0f4); color: var(--color-text, #15181d); } .ds-nav-link:focus-visible { outline: 2px solid var(--color-brand, #1d4ed8); outline-offset: 2px; } .ds-nav-link--active { background: var(--color-brand-soft, #e9efff); color: var(--color-brand-strong, #1a3fae); }"
+    },
+    {
+      "name": "Empty State",
+      "kind": "custom",
+      "refersTo": "empty-state",
+      "description": "The system's one dashed border — it means content is absent here, rather than content is separated here.",
+      "html": "<div class=\"ds-empty\"><h3 class=\"ds-empty-title\">No jobs match these filters</h3><p class=\"ds-empty-body\">Try widening the experience range or removing a location.</p></div>",
+      "css": ".ds-empty { display: block; padding: var(--space-7, 3rem) var(--space-4, 1rem); border: 1px dashed var(--color-border, #dde1e7); border-radius: var(--radius-md, 8px); background: var(--color-surface, #fff); text-align: center; } .ds-empty-title { margin: 0 0 var(--space-2, 0.5rem); font-size: var(--font-size-lg, 1.125rem); font-weight: var(--font-weight-semibold, 600); } .ds-empty-body { margin: 0 auto; max-width: 44ch; color: var(--color-text-muted, #5b6472); font-size: var(--font-size-sm, 0.875rem); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Case File",
+    "overview": "Every job in this product is a case file, and every verdict on it arrives with the sentences that produced it. That is not a metaphor borrowed for flavour — it is the product's actual mechanism. A posting titled \"Junior Java Developer\" whose body demands five years is demoted and shown as demoted, with the offending phrase quoted. The interface's job is to make that evidence legible fast enough to triage twenty postings without opening any of them.\n\nSo the system reads like a well-kept dossier rather than a job board. Neutral paper-grey ground, white cards separated by hairlines, uppercase micro-labels standing over the facts they name, and quoted evidence set in italic behind a vertical rule the way a citation is set in a document. There is exactly one accent colour and it is rationed. Semantic colour — green, amber, red — is reserved for the verdict itself and never spent on decoration. Nothing lifts, nothing glows, nothing gradients. The interface is deliberately unexciting so that the one genuinely alarming thing on a card, the contradiction between a title and its own body, reads as alarming.\n\nDensity is moderate and comparison-first. The user is holding two or three candidate jobs in mind at once and running the same query across days, so the layout must stay still: the result list is never replaced by a spinner, the confirmation line never pushes the button it sits beside, and the filter chips sit exactly where the hand reaches when there are too few results. Restraint here is not minimalism as a style. It is the condition for reading carefully.",
+    "keyCharacteristics": [
+      "Evidentiary: quoted source phrases are a first-class visual object, not a tooltip.",
+      "Flat by construction: depth comes from 1px hairlines and tonal surface shifts, never lift.",
+      "One rationed accent (Verdict Blue) plus a three-tone semantic verdict palette.",
+      "Uppercase micro-labels (0.75rem, 0.02em tracking) over facts; sentence case everywhere else.",
+      "Small radii — 4px on controls, 8px on containers, pill only on chips.",
+      "Colour never carries meaning alone; the word is always present beside it.",
+      "Light-only (color-scheme: light); no dark theme exists today."
+    ],
+    "rules": [
+      {
+        "name": "The One Verdict Rule",
+        "body": "Verdict Blue appears on the one action that moves the user forward, plus links, the focus ring, and the active nav item — and nowhere else. Never on headings, never on card borders, never on an icon for decoration, never to \"add colour\" to a flat area. Its rarity is what makes a primary button read as primary.",
+        "section": "colors"
+      },
+      {
+        "name": "The Word Beside the Colour Rule",
+        "body": "No state in this system is communicated by colour alone. The score badge shows the band name next to the number. The signal groups have \"Positive\" and \"Concern\" headings, not just green and amber. An invalid field is driven by aria-invalid=\"true\", not a class, so it can never look wrong to a sighted user while reading as fine to a screen reader. Audit test: render the screen in greyscale — if a meaning disappeared, it was never properly stated.",
+        "section": "colors"
+      },
+      {
+        "name": "The Verdict-Only Rule",
+        "body": "Green, amber and red are the product's judgement about a job. They are not available as accents, category colours, or chart series. If a new element wants one of them, the question to answer first is: what is it concluding about this posting?",
+        "section": "colors"
+      },
+      {
+        "name": "The Micro-Label Rule",
+        "body": "Uppercase with 0.02em tracking at 0.75rem is reserved for labels that name a fact appearing directly beneath them — \"EXPERIENCE\", \"LOCATION\", \"JUNIOR MATCH\", \"POSITIVE\", \"CONCERN\". Uppercase is never used for buttons, headings, nav, or emphasis. It means \"this word is the name of the value below it\".",
+        "section": "typography"
+      },
+      {
+        "name": "The Quoted Evidence Rule",
+        "body": "Text lifted verbatim from a job posting is set in italic at 0.75rem in Ink Muted, indented behind a 2px hairline rule, and wrapped in typographic quotation marks via ::before / ::after. It never appears as plain body text, because the distinction between what the product says and what the employer said is the product's central honesty commitment.",
+        "section": "typography"
+      },
+      {
+        "name": "The Two-Weight Rule",
+        "body": "500 (medium) and 600 (semibold) are the only weights above regular. 500 marks something interactive or nameable; 600 marks a heading. There is no bold body text.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Breakpoint Rule",
+        "body": "Prefer intrinsic reflow — auto-fit grids, flex-wrap, ch measures, min-width: 0 — over a new media query. A second breakpoint width needs a reason that intrinsic sizing genuinely cannot serve.",
+        "section": "layout"
+      },
+      {
+        "name": "The Still Layout Rule",
+        "body": "Content that is being compared does not move. The result list stays in place while the next page loads, with a quiet \"updating\" note beside the count rather than a spinner replacing the list. Status lines that appear on success reserve their space in advance (min-height: 1lh) so nothing beneath them jumps.",
+        "section": "layout"
+      },
+      {
+        "name": "The Borders-Carry-Depth Rule",
+        "body": "If a new surface needs to feel separate, give it a Hairline border and a tonal ground. Reach for a shadow only when the element genuinely overlays other content. There is no third shadow token, and a new one needs a real overlay to justify it.",
+        "section": "elevation"
+      },
+      {
+        "name": "The No-Lift Rule",
+        "body": "Hover and focus change colour, tone or border — never elevation, never transform: translateY, never scale.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Radius-By-Role Rule",
+        "body": "4px operates, 8px contains, pill enumerates. A new element takes its radius from which of those three it is doing, not from how it looks.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do carry depth with a 1px Hairline border and a tonal ground. Shadows are for overlays only, and there are exactly two shadow values in the system.",
+      "Do state every meaning in words as well as colour. The band name sits beside the score; the signal columns are headed \"Positive\" and \"Concern\". Greyscale the screen: if a meaning vanished, restate it.",
+      "Do set verbatim posting text as quoted evidence — italic, 0.75rem, Ink Muted, behind a 2px rule, in typographic quotes. Never blend the employer's words into the product's voice.",
+      "Do reach for intrinsic reflow before a media query: repeat(auto-fit, minmax(14rem, 1fr)), flex-wrap, ch measures, min-width: 0. There is one breakpoint (40rem) in the whole application and it should stay that way.",
+      "Do take radius from role — 4px operates, 8px contains, pill enumerates.",
+      "Do drive invalid states from aria-invalid, not a CSS class, so the visual and assistive states cannot disagree.",
+      "Do keep the global :focus-visible outline (2px Verdict Blue, 2px offset) intact on every new control.",
+      "Do use cursor: progress on a disabled submit — in this application, disabled almost always means in flight.",
+      "Do expect non-English job content on every surface that renders a title, company or description. Job.language is real, result sets mix languages on one page, and German strings run long."
+    ],
+    "donts": [
+      "Don't use gradients, gradient text, glassmorphism, backdrop blur, or glow. The product uses AI; the interface must not advertise it. This is doubly binding here — PRODUCT.md forbids fabricated accuracy claims, and visuals that imply sophistication are a claim.",
+      "Don't add urgency or novelty badges — \"NEW\", \"HOT\", \"Easy Apply\", coloured ribbons, employer logo grids. The thesis is fewer, better-judged results; the card must not look like volume. Chips carry facts only.",
+      "Don't spend Verdict Blue on headings, card borders, decorative icons, or flat areas that \"need colour\". One primary action per screen, plus links, focus and active nav.",
+      "Don't use green, amber or red for anything that is not a verdict about a job.",
+      "Don't lift on hover. No translateY, no scale, no shadow bloom — change tone instead.",
+      "Don't replace a result list with a spinner while the next page loads. Leave the list in place with a quiet updating note; the layout must stay still for comparison.",
+      "Don't render the junior score as a probability of being hired, in copy, in a progress ring, or in any framing that implies odds. It is a suitability score, and this is a standing honesty constraint on every surface that shows it.",
+      "Don't show a number without its band word, and don't treat a score of 0 as missing.",
+      "Don't design against Inter's metrics. The token names it; nothing loads it; the OS UI face is what renders.",
+      "Don't name, logo or imply any job source as a partner. Zero sources have cleared the compliance review in docs/SOURCES.md, and the only adapter that exists is fixture."
+    ]
+  }
+}

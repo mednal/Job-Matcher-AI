@@ -46,6 +46,16 @@ export const JOB_SUMMARY_SELECT = {
   requiredMaxYears: true,
   // Only the source ids, to count distinct sources without loading postings.
   postings: { select: { sourceId: true } },
+  // M9.6 — the current classification's evidence, so a result card can show the
+  // number beside the words that produced it (docs/ARCHITECTURE.md §6.5). One
+  // include rather than a second query, and because every list projects through
+  // this constant, `/jobs` and `/saved-jobs` gain it together. The DTO caps how
+  // many of them are actually served.
+  classifications: {
+    where: { isCurrent: true },
+    take: 1,
+    select: { positiveSignals: true, negativeSignals: true },
+  },
 } satisfies Prisma.JobSelect;
 
 const JOB_DETAIL_SELECT = {

@@ -7,6 +7,7 @@
   background: var(--color-surface-muted);
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
   line-height: var(--line-height-tight);
   white-space: nowrap;
 }
@@ -19,18 +20,53 @@
 
 :host(.ui-chip--positive) {
   border-color: transparent;
-  background: #e6f4ec;
+  background: var(--color-positive-soft);
   color: var(--color-positive);
 }
 
 :host(.ui-chip--caution) {
   border-color: transparent;
-  background: #fdf3e3;
+  background: var(--color-caution-soft);
   color: var(--color-caution);
 }
 
 :host(.ui-chip--negative) {
   border-color: transparent;
-  background: #fdf2f1;
+  background: var(--color-negative-soft);
   color: var(--color-negative);
+}
+
+:host(.ui-chip--removable) {
+  gap: var(--space-1);
+  padding-right: var(--space-1);
+}
+
+/**
+ * Sized past the visible glyph so the hit area clears the ~24px a finger needs,
+ * without the chip growing to match. `currentColor` keeps it in whatever tone
+ * the chip was given rather than adding a sixth colour rule per tone, and the
+ * hover tint is ink-derived for the same reason — the chip's ground is not known
+ * here, so the tint has to darken whatever is behind it.
+ */
+.ui-chip__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: currentColor;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.ui-chip__remove:hover,
+.ui-chip__remove:focus-visible {
+  background: var(--color-scrim);
 }

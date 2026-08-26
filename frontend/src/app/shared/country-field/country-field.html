@@ -1,0 +1,65 @@
+<label class="country-field__label" [for]="fieldId()">{{ label() }}</label>
+
+<div class="country-field__entry">
+  <input
+    appInput
+    type="text"
+    role="combobox"
+    autocomplete="off"
+    [id]="fieldId()"
+    placeholder="Start typing a country name…"
+    aria-autocomplete="list"
+    [attr.aria-expanded]="showList()"
+    [attr.aria-controls]="listboxId()"
+    [attr.aria-activedescendant]="showList() ? activeOptionId() : null"
+    [value]="draft()"
+    [disabled]="full()"
+    (input)="onInput($event)"
+    (focus)="onFocus()"
+    (blur)="onBlur()"
+    (keydown)="onKeydown($event)"
+  />
+
+  @if (showList()) {
+    <ul class="country-field__list" role="listbox" [id]="listboxId()" [attr.aria-label]="label()">
+      @for (country of filtered(); track country.code) {
+        <li
+          role="option"
+          [id]="optionId(country)"
+          [attr.aria-selected]="country.code === activeOption()?.code"
+          [class.country-field__option--active]="country.code === activeOption()?.code"
+          class="country-field__option"
+          (mousedown)="$event.preventDefault()"
+          (click)="select(country)"
+        >
+          {{ country.name }}
+        </li>
+      }
+    </ul>
+  }
+</div>
+
+@if (hint(); as hintText) {
+  <p class="country-field__hint">{{ hintText }}</p>
+}
+
+@if (full()) {
+  <p class="country-field__hint">That is as many values as this filter takes.</p>
+}
+
+@if (names().length > 0) {
+  <ul class="country-field__values">
+    @for (country of names(); track country.code) {
+      <li>
+        <app-chip
+          tone="brand"
+          [removable]="true"
+          [removeLabel]="'Remove ' + country.name + ' from ' + label()"
+          (remove)="remove(country.code)"
+        >
+          {{ country.name }}
+        </app-chip>
+      </li>
+    }
+  </ul>
+}

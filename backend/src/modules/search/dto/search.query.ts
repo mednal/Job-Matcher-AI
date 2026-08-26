@@ -156,13 +156,22 @@ export class SearchQuery extends PaginationQuery {
    * ISO-3166 alpha-2. Normalization only ever writes a country code from its
    * curated alias table and never infers one from a city (M6.2), so this filter
    * is exact and a job with no country code is not a match.
+   *
+   * M11.12 widened it from one code to several, so a profile that names two
+   * countries can seed it: `profile-defaults.ts` used to drop the whole filter
+   * rather than pick one of them arbitrarily, which meant the more carefully a
+   * user filled the profile in, the less of it reached their search.
+   *
+   * Comma-splittable, unlike `locations`: a country code is a closed
+   * two-character vocabulary that cannot contain a comma, while "Berlin,
+   * Germany" is one location a user typed.
    */
   @IsOptional()
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toUpperCase() : value,
-  )
-  @IsISO31661Alpha2()
-  countryCode?: string;
+  @Transform(asEnumList)
+  @IsArray()
+  @ArrayMaxSize(MAX_FILTER_VALUES)
+  @IsISO31661Alpha2({ each: true })
+  countryCode?: string[];
 
   // Named singular to match §8.1's `workplaceType[]`: the wire contract is a
   // repeated key, and the DTO is the contract.

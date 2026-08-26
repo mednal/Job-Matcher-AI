@@ -23,7 +23,7 @@ describe('toSearchParams', () => {
       q: 'angular developer',
       technologies: ['typescript'],
       locations: ['Lisbon'],
-      countryCode: 'PT',
+      countryCode: ['PT'],
       workplaceType: ['REMOTE', 'HYBRID'],
       employmentType: ['FULL_TIME'],
       juniorLevel: ['ENTRY_LEVEL', 'LIKELY_ENTRY_LEVEL'],
@@ -36,7 +36,7 @@ describe('toSearchParams', () => {
     });
 
     expect(params.get('q')).toBe('angular developer');
-    expect(params.get('countryCode')).toBe('PT');
+    expect(params.getAll('countryCode')).toEqual(['PT']);
     expect(params.getAll('workplaceType')).toEqual(['REMOTE', 'HYBRID']);
     expect(params.getAll('employmentType')).toEqual(['FULL_TIME']);
     expect(params.getAll('juniorLevel')).toEqual(['ENTRY_LEVEL', 'LIKELY_ENTRY_LEVEL']);
@@ -55,7 +55,7 @@ describe('toSearchParams', () => {
       q: '   ',
       technologies: [],
       locations: ['', '  '],
-      countryCode: '',
+      countryCode: [],
     });
 
     expect(params.toString()).toBe('');

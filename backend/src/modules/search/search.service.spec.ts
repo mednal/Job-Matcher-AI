@@ -27,6 +27,8 @@ function resultRow(overrides: Partial<SearchResultRow> = {}): SearchResultRow {
     juniorScore: 94,
     requiredMinYears: 0,
     requiredMaxYears: 1,
+    positiveSignals: [],
+    negativeSignals: [],
     sourceCount: 2,
     rank: 0.42,
     ...overrides,
@@ -142,7 +144,7 @@ describe('SearchService', () => {
         query({
           technologies: ['java', 'spring-boot'],
           locations: ['Berlin'],
-          countryCode: 'DE',
+          countryCode: ['DE'],
           workplaceType: ['REMOTE'],
           employmentType: ['FULL_TIME', 'INTERNSHIP'],
           juniorLevel: ['ENTRY_LEVEL'],
@@ -155,7 +157,7 @@ describe('SearchService', () => {
       expect(calls[0].filters).toEqual({
         technologies: ['java', 'spring-boot'],
         locations: ['Berlin'],
-        countryCode: 'DE',
+        countryCode: ['DE'],
         workplaceType: ['REMOTE'],
         employmentType: ['FULL_TIME', 'INTERNSHIP'],
         juniorLevel: ['ENTRY_LEVEL'],
@@ -226,6 +228,7 @@ describe('SearchService', () => {
         technologies: ['java', 'spring-boot'],
         locations: ['Berlin'],
         countryCodes: ['DE'],
+        yearsOfExperience: 1,
       });
     });
 
@@ -241,11 +244,40 @@ describe('SearchService', () => {
     });
 
     it('sends no profile when the saved one names nothing to rank by', async () => {
-      storedProfile = profile({ displayName: 'Nala', yearsOfExperience: 1 });
+      // A display name is not a preference, and zero years is the default the
+      // profile arrives with rather than something its owner stated (M11.12).
+      storedProfile = profile({ displayName: 'Nala', yearsOfExperience: 0 });
 
       await service.search(query({ q: 'java' }), USER_ID);
 
       expect(calls[0].profile).toBeNull();
+    });
+
+    /**
+     * M11.12 — `yearsOfExperience` was written by the profile form and read by
+     * nothing. It now ranks, but only above zero: the default a profile holds
+     * before anyone touches it must not acquire a ranking term on its own, and
+     * at zero the term would restate what `juniorScore` already contributes.
+     */
+    it('ranks by stated years even when nothing else is filled in', async () => {
+      storedProfile = profile({ yearsOfExperience: 2 });
+
+      await service.search(query({ q: 'java' }), USER_ID);
+
+      expect(calls[0].profile).toEqual({
+        technologies: [],
+        locations: [],
+        countryCodes: [],
+        yearsOfExperience: 2,
+      });
+    });
+
+    it('passes zero years as null rather than as a figure', async () => {
+      storedProfile = profile({ technologies: ['java'], yearsOfExperience: 0 });
+
+      await service.search(query({ q: 'java' }), USER_ID);
+
+      expect(calls[0].profile?.yearsOfExperience).toBeNull();
     });
 
     it.each([

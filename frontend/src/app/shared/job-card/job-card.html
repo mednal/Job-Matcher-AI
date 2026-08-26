@@ -1,46 +1,60 @@
-<div class="job-card__head">
-  <div class="job-card__identity">
-    <h3 class="job-card__title">
-      <a [routerLink]="['/jobs', job().id]">{{ job().title }}</a>
-    </h3>
-    <p class="job-card__company">
-      <span class="job-card__employer">{{ job().companyName }}</span>
-      <span class="job-card__separator" aria-hidden="true">·</span>
-      <span>{{ location() }}</span>
-    </p>
-  </div>
+<!--
+  Identity and aside are direct children of the card rather than sharing a
+  `__head` row. The row made the card's height the badge's height, which left a
+  65px hole between the company line and the facts on every desktop card; as
+  grid items the facts simply flow up beside the badge instead.
 
-  <div class="job-card__aside">
-    <app-junior-score-badge
-      [level]="job().juniorLevel"
-      [score]="job().juniorScore"
-      [evidenceShown]="evidenceShown()"
-    />
-    <!-- M11.8 drops the save control in here; the card stays unaware of it. -->
-    <ng-content select="[card-actions]" />
-  </div>
+  The order here is the order a screen reader reads: which job, then the verdict
+  on it, then the evidence.
+-->
+<div class="job-card__identity">
+  <h3 class="job-card__title">
+    <a [routerLink]="['/jobs', job().id]">{{ job().title }}</a>
+  </h3>
+  <p class="job-card__company">
+    <span class="job-card__employer">{{ job().companyName }}</span>
+    <span class="job-card__separator" aria-hidden="true">·</span>
+    <span>{{ location() }}</span>
+  </p>
 </div>
+
+<div class="job-card__aside">
+  <app-junior-score-badge
+    [level]="job().juniorLevel"
+    [score]="job().juniorScore"
+    [evidenceShown]="evidenceShown()"
+  />
+  <!-- M11.8 drops the save control in here; the card stays unaware of it. -->
+  <ng-content select="[card-actions]" />
+</div>
+
+@if (contradiction(); as warning) {
+  <p class="job-card__contradiction">
+    <span class="job-card__contradiction-mark" aria-hidden="true">!</span>
+    {{ warning }}
+  </p>
+}
 
 <ul class="job-card__facts">
   <li>
-    <span class="job-card__fact-label">Experience</span>
+    <span class="ui-label job-card__fact-label">Experience</span>
     <span>{{ experience() ?? 'Not stated' }}</span>
   </li>
   @if (workplace(); as workplaceLabel) {
     <li>
-      <span class="job-card__fact-label">Workplace</span>
+      <span class="ui-label job-card__fact-label">Workplace</span>
       <span>{{ workplaceLabel }}</span>
     </li>
   }
   @if (employment(); as employmentLabel) {
     <li>
-      <span class="job-card__fact-label">Contract</span>
+      <span class="ui-label job-card__fact-label">Contract</span>
       <span>{{ employmentLabel }}</span>
     </li>
   }
   @if (posted(); as postedOn) {
     <li>
-      <span class="job-card__fact-label">{{ postedOn.prefix }}</span>
+      <span class="ui-label job-card__fact-label">{{ postedOn.prefix }}</span>
       <span>{{ postedOn.label }}</span>
     </li>
   }

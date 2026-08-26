@@ -31,6 +31,15 @@ function render(query: SearchQuery = {}) {
       input.dispatchEvent(new Event('input'));
       fixture.detectChanges();
     },
+    /** Every list field in the panel commits what was typed on Enter (M11.12). */
+    pressEnter(selector: string) {
+      element
+        .querySelector<HTMLInputElement>(selector)!
+        .dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', cancelable: true, bubbles: true }),
+        );
+      fixture.detectChanges();
+    },
     toggle(label: string) {
       this.checkbox(label).dispatchEvent(new Event('change'));
       fixture.detectChanges();
@@ -117,20 +126,50 @@ describe('SearchFilters', () => {
     expect(panel.applied).toEqual([{ juniorLevel: ['CLEARLY_EXPERIENCED'] }]);
   });
 
-  it('upper-cases a country code, which the API matches exactly', () => {
+  // The country field is a searchable dropdown over the full ISO list: typing
+  // a name and pressing Enter picks the top match and stores its alpha-2
+  // code, not what was typed — the same field the profile's "Countries" uses.
+  it('resolves a typed country name to its ISO alpha-2 code', () => {
     const panel = render();
-    panel.type('#search-country', 'de');
+    panel.type('#search-country', 'Germany');
+    panel.pressEnter('#search-country');
     panel.submit();
 
-    expect(panel.applied).toEqual([{ countryCode: 'DE' }]);
+    expect(panel.applied).toEqual([{ countryCode: ['DE'] }]);
   });
 
-  it('keeps a zero, which is a filter and not an empty field', () => {
-    const panel = render();
-    panel.type('#search-min-score', '0');
+  /**
+   * "Where" (free-text location) was replaced by the country picker: a
+   * database with only a handful of postings has only a handful of locations
+   * to suggest, while the ISO country list is always complete. `locations`
+   * itself is still round-tripped, below.
+   */
+  it('has no manual control for location any more', () => {
+    expect(render().element.querySelector('#search-locations')).toBeNull();
+  });
+
+  it('preserves a location the URL already carries, though nothing here can edit it', () => {
+    const panel = render({ locations: ['Berlin'] });
     panel.submit();
 
-    expect(panel.applied).toEqual([{ minJuniorScore: 0 }]);
+    expect(panel.applied).toEqual([{ locations: ['Berlin'] }]);
+  });
+
+  // The score is a slider now: 0 is its rest position rather than a typed
+  // value, and "at least 0" would filter out nothing anyway.
+  it('leaves the score filter off while the slider sits at its rest position', () => {
+    const panel = render();
+    panel.submit();
+
+    expect(panel.applied).toEqual([{}]);
+  });
+
+  it('emits the score once the slider is moved off zero', () => {
+    const panel = render();
+    panel.type('#search-min-score', '40');
+    panel.submit();
+
+    expect(panel.applied).toEqual([{ minJuniorScore: 40 }]);
   });
 
   it('clears everything the user narrowed with', () => {
@@ -173,5 +212,75 @@ describe('SearchFilters', () => {
     panel.submit();
 
     expect(panel.applied[0]).not.toHaveProperty('sort');
+  });
+
+  /**
+   * Search is a way of saying "use what's in this panel", the same as pressing
+   * Enter in the field itself — typing a country and clicking Search must not
+   * discard it just because Enter was never pressed.
+   */
+  it('commits a country typed but not confirmed with Enter when the form is submitted', () => {
+    const panel = render();
+    panel.type('#search-country', 'France');
+    panel.submit();
+
+    expect(panel.applied).toEqual([{ countryCode: ['FR'] }]);
+  });
+
+  it('commits an unconfirmed technology the same way', () => {
+    const panel = render();
+    panel.type('#search-technologies', 'java');
+    panel.submit();
+
+    expect(panel.applied).toEqual([{ technologies: ['java'] }]);
+  });
+
+  /**
+   * `novalidate` turns off the browser's own bounds checking, so the form has to
+   * enforce them itself — otherwise a value outside range submits clean and then
+   * vanishes silently the next time it round-trips through the URL, with nothing
+   * on screen to say why. The score filter has no such test any more: a range
+   * input cannot be driven past its `max` attribute from the UI in the first
+   * place, so there is nothing here for the form to refuse.
+   */
+  it('refuses years-required above the field’s own maximum', () => {
+    const panel = render();
+    panel.type('#search-max-years', '999');
+    panel.submit();
+
+    expect(panel.applied).toEqual([]);
+    expect(panel.field<HTMLInputElement>('#search-max-years').getAttribute('aria-invalid')).toBe(
+      'true',
+    );
+  });
+
+  /**
+   * The score/years/posted trio sits under its own "More filters" disclosure,
+   * nested inside the panel's — a screen-reader user tabbing through hears one
+   * named group rather than three unrelated fields with no shared context.
+   */
+  it('groups the score, years and posted-within fields under one disclosure', () => {
+    const panel = render();
+    const scoreField = panel.field<HTMLInputElement>('#search-min-score');
+    const group = scoreField.closest('details')!;
+
+    expect(group).not.toBeNull();
+    expect(group.querySelector('summary')?.textContent?.trim()).toBe('More filters');
+    expect(group.contains(panel.field('#search-max-years'))).toBe(true);
+    expect(group.contains(panel.field('#search-posted-within'))).toBe(true);
+  });
+
+  it('starts the "More filters" disclosure closed with nothing in it set', () => {
+    expect(render().field<HTMLInputElement>('#search-min-score').closest('details')!.open).toBe(
+      false,
+    );
+  });
+
+  it('opens "More filters" when the URL already narrows by one of its fields', () => {
+    expect(
+      render({ maxYearsRequired: 2 })
+        .field<HTMLInputElement>('#search-min-score')
+        .closest('details')!.open,
+    ).toBe(true);
   });
 });

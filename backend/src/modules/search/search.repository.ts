@@ -32,7 +32,7 @@ import { SearchSort } from './dto/search.query';
 export interface SearchFilters {
   readonly technologies: string[];
   readonly locations: string[];
-  readonly countryCode: string | null;
+  readonly countryCode: string[];
   readonly workplaceType: WorkplaceType[];
   readonly employmentType: EmploymentType[];
   readonly juniorLevel: JuniorLevel[];
@@ -42,10 +42,10 @@ export interface SearchFilters {
 }
 
 /**
- * M9.5 — the caller's saved preferences, already reduced to the two things
+ * M9.5/M11.12 — the caller's saved preferences, already reduced to the things
  * ranking uses (`docs/ARCHITECTURE.md` §6.5). The service passes `null` for an
- * anonymous request *and* for a profile that names neither technologies nor a
- * place, so the repository has one condition to test rather than three.
+ * anonymous request *and* for a profile that names none of them, so the
+ * repository has one condition to test rather than three.
  *
  * These are preferences, never predicates: nothing here narrows the result set.
  * A profile that filtered would hide jobs the user never asked to hide, and would
@@ -58,6 +58,12 @@ export interface ProfileFit {
   readonly locations: string[];
   /** ISO-3166 alpha-2, matched exactly against `Job.countryCode`. */
   readonly countryCodes: string[];
+  /**
+   * M11.12 — professional experience the caller already has, or `null` when it
+   * should not rank at all. See `RELEVANCE_PROFILE_SHARES.experience` for why
+   * zero years arrives here as `null` rather than as `0`.
+   */
+  readonly yearsOfExperience: number | null;
 }
 
 /** What one page of results is asked for. */
@@ -76,7 +82,7 @@ export interface SearchCriteria {
 export const NO_FILTERS: SearchFilters = Object.freeze({
   technologies: [],
   locations: [],
-  countryCode: null,
+  countryCode: [],
   workplaceType: [],
   employmentType: [],
   juniorLevel: [],
@@ -88,6 +94,13 @@ export const NO_FILTERS: SearchFilters = Object.freeze({
 export interface SearchResultRow extends JobSummaryRow {
   /** Distinct sources carrying the job — the "also listed on N sources" count. */
   readonly sourceCount: number;
+  /**
+   * M9.6 — the current classification's two signal arrays, flat rather than
+   * nested, because a correlated subquery returns a column and not a relation.
+   * `JobSummaryResponse.fromEntity` reads either shape.
+   */
+  readonly positiveSignals: unknown;
+  readonly negativeSignals: unknown;
   /**
    * Weighted text rank, 0 when there is no text query. Internal: it orders the
    * page and is never part of the API contract, because it is only comparable
@@ -177,16 +190,47 @@ const RELEVANCE_HALF_LIFE_DAYS = 30;
 const RELEVANCE_PROFILE_WEIGHT = 0.2;
 
 /**
- * How the fit term splits between the two things §6.5 names.
+ * How the fit term splits between the things a profile can say.
  *
- * Technologies carry more because they discriminate more: most result sets are
- * already narrowed by where the user is looking, while the skills a posting names
- * differ job by job. When a profile supplies only one of the two, that side takes
- * the whole weight (see `profileFit`) — otherwise a user who saved technologies
- * and no location would be capped at 0.6 of a term they filled in completely.
+ * The shares are *relative*: `profileFit` divides each by the total of the sides
+ * the profile actually filled in, so they always sum to 1 over the sides present
+ * and a fully-filled side is never capped below it. That is the same rule M9.5
+ * expressed as "forfeit your share to the other one", generalized — with only
+ * technologies and place present it still yields exactly 0.6 and 0.4.
+ *
+ * Technologies carry the most because they discriminate the most: most result
+ * sets are already narrowed by where the user is looking, while the skills a
+ * posting names differ job by job.
+ *
+ * `experience` is M11.12's, and it is the smallest because it is the newest and
+ * the least validated — M12.3 tunes the whole blend against real data. It is
+ * also the one side a profile can be *silent* about while still holding a value:
+ * `yearsOfExperience` defaults to 0 and is non-null, so an untouched profile
+ * would otherwise acquire a ranking term its owner never asked for. At zero
+ * years the term would also say almost exactly what `juniorScore` already says
+ * with 0.35 of the blend, so it is skipped there and earns its place only where
+ * it adds something new: the candidate with two or three years, for whom a job
+ * asking for three is reachable and `juniorScore` alone says otherwise.
  */
-const PROFILE_TECHNOLOGY_SHARE = 0.6;
-const PROFILE_LOCATION_SHARE = 0.4;
+const RELEVANCE_PROFILE_SHARES = {
+  technologies: 0.6,
+  place: 0.4,
+  experience: 0.3,
+} as const;
+
+/**
+ * How far past a candidate's stated experience a posting may reach and still
+ * count as reachable.
+ *
+ * One year, because a stated minimum is a filter a human wrote, not a measured
+ * boundary, and "3+ years" is routinely written by teams that will read a strong
+ * two-year CV. Reaching further would start recommending jobs on the strength of
+ * optimism rather than evidence, which is the failure this product exists to fix.
+ */
+const PROFILE_EXPERIENCE_REACH = 1;
+
+/** No stated minimum is no evidence either way, so the term sits at its midpoint. */
+const PROFILE_EXPERIENCE_UNSTATED = 0.5;
 
 /**
  * Matching this many of the user's technologies is already a full technology fit.
@@ -231,6 +275,30 @@ const SOURCE_COUNT = Prisma.sql`(
   FROM "JobPosting"
   WHERE "JobPosting"."jobId" = "Job"."id"
 )`;
+
+/**
+ * M9.6 — the current classification's evidence, one JSON column at a time.
+ *
+ * A correlated subquery for the same reason `SOURCE_COUNT` is one: the outer
+ * query keeps one row per job, so `LIMIT` still means "this many jobs". It is
+ * answered by `JobClassification_one_current_idx`, M2.5's partial unique index
+ * over `jobId WHERE isCurrent`, which is exactly this lookup.
+ *
+ * The column name is `Prisma.raw` but never comes from a request — the two call
+ * sites below pass literals, and there is no code path that reaches this with
+ * anything else.
+ */
+function currentSignals(
+  column: 'positiveSignals' | 'negativeSignals',
+): Prisma.Sql {
+  return Prisma.sql`(
+    SELECT "JobClassification".${Prisma.raw(`"${column}"`)}
+    FROM "JobClassification"
+    WHERE "JobClassification"."jobId" = "Job"."id"
+      AND "JobClassification"."isCurrent"
+    LIMIT 1
+  )`;
+}
 
 /**
  * `IN (…)` against a PostgreSQL enum column. Every value stays a bind parameter;
@@ -279,6 +347,8 @@ export class SearchRepository {
       this.prisma.$queryRaw<SearchResultRow[]>`
         SELECT ${SUMMARY_COLUMNS},
                ${SOURCE_COUNT} AS "sourceCount",
+               ${currentSignals('positiveSignals')} AS "positiveSignals",
+               ${currentSignals('negativeSignals')} AS "negativeSignals",
                ${rank} AS "rank"
         FROM "Job"
         WHERE ${where}
@@ -366,8 +436,16 @@ export class SearchRepository {
       conditions.push(Prisma.sql`(${Prisma.join(matches, ' OR ')})`);
     }
 
-    if (filters.countryCode !== null) {
-      conditions.push(Prisma.sql`"Job"."countryCode" = ${filters.countryCode}`);
+    // M11.12 — several codes widen, like every other list facet. `= ANY(...)`
+    // rather than `IN (…)` because the values are a bind array; the column is
+    // `char(2)` and the parameters are text, so the cast goes on the array to
+    // keep `Job_countryCode_workplaceType_idx` usable.
+    if (filters.countryCode.length > 0) {
+      conditions.push(
+        Prisma.sql`"Job"."countryCode" = ANY(ARRAY[${Prisma.join(
+          filters.countryCode,
+        )}]::text[])`,
+      );
     }
 
     if (filters.workplaceType.length > 0) {
@@ -544,39 +622,64 @@ export class SearchRepository {
    * neither reaches the repository as `null`.
    */
   private profileFit(profile: ProfileFit): Prisma.Sql {
-    const hasTechnologies = profile.technologies.length > 0;
-    const hasPlace =
-      profile.locations.length > 0 || profile.countryCodes.length > 0;
+    // Each side the profile actually filled in, with the share it asks for.
+    // A side the profile is silent about is simply absent, and the normalization
+    // below hands its share to the others rather than capping a fully-filled
+    // side below 1.
+    const sides: { share: number; fit: Prisma.Sql }[] = [];
 
-    // A side the profile is silent about contributes nothing and forfeits its
-    // share to the other, rather than capping a fully-filled side below 1.
-    const technologyWeight = !hasTechnologies
-      ? 0
-      : hasPlace
-        ? PROFILE_TECHNOLOGY_SHARE
-        : 1;
-    const placeWeight = !hasPlace
-      ? 0
-      : hasTechnologies
-        ? PROFILE_LOCATION_SHARE
-        : 1;
-
-    const terms: Prisma.Sql[] = [];
-
-    if (hasTechnologies) {
-      terms.push(
-        Prisma.sql`${technologyWeight}::float8 * ${this.technologyFit(
-          profile.technologies,
-        )}`,
-      );
+    if (profile.technologies.length > 0) {
+      sides.push({
+        share: RELEVANCE_PROFILE_SHARES.technologies,
+        fit: this.technologyFit(profile.technologies),
+      });
     }
-    if (hasPlace) {
-      terms.push(
-        Prisma.sql`${placeWeight}::float8 * ${this.placeFit(profile)}`,
-      );
+    if (profile.locations.length > 0 || profile.countryCodes.length > 0) {
+      sides.push({
+        share: RELEVANCE_PROFILE_SHARES.place,
+        fit: this.placeFit(profile),
+      });
     }
+    if (profile.yearsOfExperience !== null) {
+      sides.push({
+        share: RELEVANCE_PROFILE_SHARES.experience,
+        fit: this.experienceFit(profile.yearsOfExperience),
+      });
+    }
+
+    const total = sides.reduce((sum, side) => sum + side.share, 0);
+    const terms = sides.map(
+      (side) => Prisma.sql`${side.share / total}::float8 * ${side.fit}`,
+    );
 
     return Prisma.sql`(${Prisma.join(terms, ' + ')})`;
+  }
+
+  /**
+   * 1 when the posting's stated minimum is within reach of the experience the
+   * caller has, 0 when it is beyond it, and a neutral midpoint when the posting
+   * states no minimum at all.
+   *
+   * The midpoint is the honest encoding of "no evidence": a job that says
+   * nothing about years must not be ranked as though it had said something
+   * favourable, nor punished for the silence. `maxYearsRequired` already treats
+   * the same NULL as the absence of a barrier when it *filters* (M9.2) — but
+   * filtering answers a yes/no question where ranking answers a how-much one,
+   * and pretending silence were a perfect fit would float every unstated job to
+   * the top of a personalized search.
+   *
+   * It ranks and never filters: a posting far beyond the caller's experience
+   * scores zero here and still appears in the results.
+   */
+  private experienceFit(yearsOfExperience: number): Prisma.Sql {
+    const reach = yearsOfExperience + PROFILE_EXPERIENCE_REACH;
+
+    return Prisma.sql`(CASE
+      WHEN "Job"."requiredMinYears" IS NULL
+        THEN ${PROFILE_EXPERIENCE_UNSTATED}::float8
+      WHEN "Job"."requiredMinYears" <= ${reach} THEN 1.0::float8
+      ELSE 0.0::float8
+    END)`;
   }
 
   /**

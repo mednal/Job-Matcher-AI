@@ -1,6 +1,10 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import { AppConfigModule } from './common/config/config.module';
+import { ThrottlingModule } from './common/throttling/throttling.module';
 import { PrismaModule } from './common/prisma/prisma.module';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -14,6 +18,10 @@ import { IngestionModule } from './modules/ingestion/ingestion.module';
 @Module({
   imports: [
     AppConfigModule,
+    // Before AuthModule: both register a global guard, they run in registration
+    // order, and rate limiting has to happen before authentication rather than
+    // after it (see ThrottlingModule).
+    ThrottlingModule,
     PrismaModule,
     HealthModule,
     AuthModule,
@@ -27,5 +35,13 @@ import { IngestionModule } from './modules/ingestion/ingestion.module';
     SourcesModule,
     IngestionModule,
   ],
+  // Registered here rather than in main.ts so that the error envelope is a
+  // property of the application, not of one bootstrap path: every e2e spec
+  // builds its own app from this module and gets the same shape.
+  providers: [{ provide: APP_FILTER, useClass: AllExceptionsFilter }],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RequestIdMiddleware).forRoutes('*splat');
+  }
+}

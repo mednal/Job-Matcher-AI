@@ -1,0 +1,109 @@
+.profile__hint {
+  color: var(--color-text-muted);
+  max-width: 60ch;
+}
+
+.profile__form {
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Auto-fit rather than a fixed column count, as in the filter panel: the form is
+   a column of independent groups, so it reflows from one column on a phone to
+   two on a desktop without a breakpoint per step. */
+.profile__group {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--space-5);
+  margin: 0 0 var(--space-5);
+  padding: 0;
+  border: 0;
+}
+
+.profile__group--choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.profile__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.profile__label {
+  padding: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+/* 0.75rem, matching the hint under every other field in the product — this one
+   screen was setting them a size larger than the filter panel and the
+   multi-value field beside it. */
+.profile__field-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+/* The row is the target, matching the filter panel — and it was the one set of
+   checkbox rows in the product whose label did not take a pointer cursor. */
+.profile__choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-inline: calc(var(--space-2) * -1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.profile__choice:hover {
+  background: var(--color-surface-muted);
+}
+
+.profile__choice input {
+  flex: none;
+  margin: 0;
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+.profile__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-4);
+}
+
+/* Always present, empty until there is something to say, so the confirmation
+   does not push the button around when it appears. */
+.profile__status {
+  margin: 0;
+  min-height: 1lh;
+  color: var(--color-positive);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Everything but the spacing now comes from the shared `.ui-error` block; the
+   four screens that render a failed request had each grown a copy of it. */
+.profile__error {
+  margin-bottom: var(--space-4);
+}
+
+/* A form is read and filled in one column at a time, so it takes the reading
+   measure rather than the result list's scanning width. */
+.page.profile {
+  max-width: var(--layout-reading-width);
+}

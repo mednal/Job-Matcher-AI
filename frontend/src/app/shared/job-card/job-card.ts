@@ -22,12 +22,12 @@ const MAX_TECHNOLOGIES = 6;
  * signals shows the number above the excerpts that produced it. No caller is
  * trusted to keep the two in step.
  *
- * **The list endpoints do not return signals.** `JobSummary` carries `juniorLevel`
- * and `juniorScore` but no evidence, so a search result shows the band by default;
- * §6.5 names that as the correct fallback when the evidence cannot be shown beside
- * the number. `positiveSignals` / `negativeSignals` are inputs rather than fields
- * read off the job so a caller that *does* have them — the detail page, or a list
- * endpoint that grows them later — gets the number without this component changing.
+ * **The signals arrive as inputs, not as fields read off the job.** M9.6 grew them
+ * onto `JobSummary`, so a search result now carries its own evidence and shows the
+ * number — but the caller still passes them in, which is what lets the detail page
+ * hand over the *complete* set while a list hands over the capped one. A caller
+ * that passes nothing gets the `JuniorLevel` band, which §6.5 names as the correct
+ * fallback when the evidence cannot be shown beside the number.
  *
  * Purely presentational: it takes a job and renders it. Saving is M11.8, and it
  * arrives through the `card-actions` slot rather than by this component learning
@@ -61,6 +61,23 @@ export class JobCard {
   protected readonly experience = computed(() =>
     formatExperience(this.job().requiredMinYears, this.job().requiredMaxYears),
   );
+
+  /**
+   * M11.10 — the sentence this whole product exists to put in front of someone:
+   * the title says junior, the posting says otherwise.
+   *
+   * `juniorTitleContradicted` is the API's, decided with the same title
+   * vocabulary and the same threshold the classifier used, so this component
+   * only phrases it. The years come from the posting's own stated minimum, so
+   * the line quotes a figure rather than characterising one.
+   */
+  protected readonly contradiction = computed(() => {
+    const job = this.job();
+    if (!job.juniorTitleContradicted || job.requiredMinYears === null) {
+      return null;
+    }
+    return `Reads as junior — but asks for ${job.requiredMinYears}+ years`;
+  });
 
   /**
    * "Posted" only when the source stated a date. Otherwise the date shown is

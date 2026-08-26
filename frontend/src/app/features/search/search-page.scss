@@ -1,3 +1,9 @@
+/* The lead paragraph carries the score's standing qualification, so it gets the
+   room to be read rather than being tucked under the title. */
+.search > .page__note {
+  margin-bottom: var(--space-5);
+}
+
 .search__toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -20,6 +26,7 @@
   color: var(--color-text-muted);
   font-size: var(--font-size-sm);
   font-weight: 400;
+  font-variant-numeric: normal;
 }
 
 .search__sort {
@@ -29,39 +36,51 @@
   font-size: var(--font-size-sm);
 }
 
+.search__sort label {
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* The select sizes to its content rather than to the `width: 100%` every other
+   field in the product wants — it sits in a toolbar row, not in a form column. */
+.search__sort select {
+  width: auto;
+}
+
 .search__results {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-5);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.search__error {
+/**
+ * M11.11 — the active-filter chips.
+ *
+ * Between the bar and the result count, because it is the last thing that
+ * changed the results and the first thing someone reaches for when there are
+ * too few of them.
+ */
+.search__chips {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--color-negative);
-  border-radius: var(--radius-md);
-  background: #fdf2f1;
-  color: var(--color-negative);
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-4);
 }
 
-.search__error-message {
+.search__chips-label {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.search__chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   margin: 0;
-}
-
-.search__retry {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid currentcolor;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: inherit;
-  font: inherit;
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
+  padding: 0;
+  list-style: none;
 }

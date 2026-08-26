@@ -29,7 +29,12 @@
                 "input": "public"
               }
             ],
-            "styles": ["src/styles.scss"]
+            "styles": [
+              "node_modules/@fontsource-variable/inter/index.css",
+              "node_modules/@fontsource-variable/source-serif-4/index.css",
+              "node_modules/@fontsource-variable/source-serif-4/wght-italic.css",
+              "src/styles.scss"
+            ]
           },
           "configurations": {
             "production": {
@@ -63,6 +68,9 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "options": {
+            "port": 4200
+          },
           "configurations": {
             "production": {
               "buildTarget": "frontend:build:production"
